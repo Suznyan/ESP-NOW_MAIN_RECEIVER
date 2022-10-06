@@ -1,7 +1,7 @@
 #include <Arduino.h>
 #include <Arduino_JSON.h>
+#include <SPIFFS.h>
 #include <U8g2lib.h>
-// #include <WiFi.h>
 #include <WiFiManager.h>
 #include <esp_now.h>
 #include <esp_wifi.h>
@@ -9,16 +9,30 @@
 
 #include "ESPAsyncWebServer.h"
 
+//---------------------------
 // Oled display pins
 #define CLK_PIN 22
 #define DATA_PIN 21
 #define RESET_PIN -1
+//---------------------------
 
-#define LightStatus 25
-#define Switch 26
+//---------------------------
+// Board 1 indicator
+#define Board_1_State 23
+#define Board_1_Switch 26
 
-U8G2_SH1106_128X64_NONAME_F_HW_I2C display(U8G2_R0, CLK_PIN, DATA_PIN,
-                                           RESET_PIN);
+// Board 2 indicator
+#define Board_2_State 32
+#define Board_2_Switch 27
+
+// Board 3 indicator
+#define Board_3_State 33
+#define Board_3_Switch 14
+
+// Board 4 indicator
+#define Board_4_State 25
+#define Board_4_Switch 12
+//---------------------------
 
 // Update area left position (in tiles)
 const uint8_t board_1_tile_area_x_pos = 6;
@@ -36,49 +50,74 @@ const uint8_t board_2_tile_area_width = 4;
 // this will allow cour18 chars to fit into the area
 const uint8_t board_2_tile_area_height = 3;
 
-// Replace with your network credentials (STATION)
-// const char *ssid = "ThuHuong-2.4G";
-// const char *password = "62749820";
-
-uint8_t remoteAddress[] = {0x7C, 0x9E, 0xBD, 0x48, 0x71, 0xE8};
-uint8_t sensorBoardAddress[] = {0xC8, 0xF0, 0x9E, 0x9E, 0xF1, 0x88};
 uint8_t AllBroadcastAddress[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+uint8_t board_1_address[] = {0x7C, 0x9E, 0xBD, 0x48, 0x71, 0xE8};
+uint8_t board_2_address[] = {0xC8, 0xF0, 0x9E, 0x9E, 0xF1, 0x88};
+uint8_t board_3_address[] = {0xC8, 0xF0, 0x9E, 0x9E, 0x5D, 0xD0};
+uint8_t board_4_address[] = {0x10, 0x52, 0x1C, 0x5D, 0x51, 0xAC};
 
-const char board1_address[18] = {"7c:9e:bd:48:71:e8"};
-const char board2_address[18] = {"c8:f0:9e:9e:f1:88"};
+const char board_1_address_str[18] = {"7c:9e:bd:48:71:e8"};
+const char board_2_address_str[18] = {"c8:f0:9e:9e:f1:88"};
+const char board_3_address_str[18] = {"c8:f0:9e:9e:5d:d0"};
+const char board_4_address_str[18] = {"10:52:1c:5d:51:ac"};
 
+// Oled display object
+U8G2_SH1106_128X64_NONAME_F_HW_I2C display(U8G2_R0, CLK_PIN, DATA_PIN,
+                                           RESET_PIN);
+
+// Wifi manager object
 WiFiManager wm;
 
-JSONVar board;
+JSONVar board1;
+JSONVar board2;
+JSONVar board3;
+JSONVar board4;
 
 AsyncWebServer server(80);
 AsyncEventSource events("/events");
 
-bool LastReceivedStatus;
-bool Command = false;
+bool Board_1_Last_Received_State;
+bool Board_2_Last_Received_State;
+bool Board_3_Last_Received_State;
+bool Board_4_Last_Received_State;
 
-char temp[50];
-char hum[50];
+char temp_str[50];
+char hum_str[50];
 
 // Structure example to receive data
 // Must match the sender structure
 typedef struct {
-    int id;
-    char WiFiName[20];
-    bool status = Command;
-} struct_message1;
+    byte id : 4;
+    byte WiFi_Channel;
+    bool status;
+} Device_State_Msg_Struct;
 
 typedef struct {
-    int id;
-    char WiFiName[20];
+    byte id : 4;
+    byte WiFi_Channel;
+    bool status;
     float temp;
     float hum;
     int readingId;
-} struct_message2;
+} Sensor_Reading_Msg_Struct;
 
-struct_message1 Board0;
-struct_message1 Board1_Data;
-struct_message2 Board2_Data;
+esp_err_t outcome;
+
+Device_State_Msg_Struct Board1_Data;
+Device_State_Msg_Struct Board3_Data;
+Device_State_Msg_Struct Board4_Data;
+Sensor_Reading_Msg_Struct Board2_Data;
+
+int32_t getWiFiChannel(const char *ssid) {
+    if (int32_t n = WiFi.scanNetworks()) {
+        for (uint8_t i = 0; i < n; i++) {
+            if (!strcmp(ssid, WiFi.SSID(i).c_str())) {
+                return WiFi.channel(i);
+            }
+        }
+    }
+    return 0;
+}
 
 void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
     Serial.print("\r\nLast Packet Send Status:\t");
@@ -97,96 +136,77 @@ void OnDataRecv(const uint8_t *mac_addr, const uint8_t *incomingData, int len) {
              mac_addr[5]);
     Serial.println(macStr);
 
-    if (strstr(macStr, board1_address)) {
+    if (strstr(macStr, board_1_address_str)) {
         memcpy(&Board1_Data, incomingData, sizeof(Board1_Data));
         Serial.printf("Board ID %u: %u bytes\n", Board1_Data.id, len);
+
+        if (Board1_Data.status != Board_1_Last_Received_State) {
+            Serial.println(Board1_Data.status ? "Light ON\n" : "Light OFF\n");
+            Board_1_Last_Received_State = Board1_Data.status;
+        }
+
+        board1["id"] = Board1_Data.id;
+        board1["state"] = Board1_Data.status ? "ON" : "OFF";
+
+        String jsonString1 = JSON.stringify(board1);
+        events.send(jsonString1.c_str(), "new_device_state", millis());
     }
 
-    if (strstr(macStr, board2_address)) {
+    if (strstr(macStr, board_2_address_str)) {
         memcpy(&Board2_Data, incomingData, sizeof(Board2_Data));
-        sprintf(temp, "%4.2f", Board2_Data.temp);
-        sprintf(hum, "%4.2f", Board2_Data.hum);
+        sprintf(temp_str, "%4.2f", Board2_Data.temp);
+        sprintf(hum_str, "%4.2f", Board2_Data.hum);
         Serial.printf("Board ID %u: %u bytes\n", Board2_Data.id, len);
         Serial.printf("Temperature: %4.2f \n", Board2_Data.temp);
         Serial.printf("Humidity: %4.2f \n", Board2_Data.hum);
         Serial.printf("readingID value: %d \n", Board2_Data.readingId);
 
-        board["id"] = 1;
-        board["temperature"] = Board2_Data.temp;
-        board["humidity"] = Board2_Data.hum;
-        board["readingId"] = String(Board2_Data.readingId);
-        String jsonString = JSON.stringify(board);
-        events.send(jsonString.c_str(), "new_readings", millis());
+        if (Board2_Data.status != Board_2_Last_Received_State) {
+            Serial.println(Board2_Data.status ? "Light ON\n" : "Light OFF\n");
+            Board_2_Last_Received_State = Board2_Data.status;
+        }
+
+        board2["id"] = Board2_Data.id;
+        board2["temperature"] = Board2_Data.temp;
+        board2["humidity"] = Board2_Data.hum;
+        board2["readingId"] = String(Board2_Data.readingId);
+        String jsonString2 = JSON.stringify(board2);
+        events.send(jsonString2.c_str(), "new_readings", millis());
+    }
+
+    if (strstr(macStr, board_3_address_str)) {
+        memcpy(&Board3_Data, incomingData, sizeof(Board3_Data));
+        Serial.printf("Board ID %u: %u bytes\n", Board3_Data.id, len);
+
+        if (Board3_Data.status != Board_3_Last_Received_State) {
+            Serial.println(Board3_Data.status ? "Light ON\n" : "Light OFF\n");
+            Board_3_Last_Received_State = Board3_Data.status;
+        }
+
+        board3["id"] = Board3_Data.id;
+        board3["state"] = Board3_Data.status ? "ON" : "OFF";
+
+        String jsonString3 = JSON.stringify(board3);
+        events.send(jsonString3.c_str(), "new_device_state", millis());
+    }
+
+    if (strstr(macStr, board_4_address_str)) {
+        memcpy(&Board4_Data, incomingData, sizeof(Board4_Data));
+        Serial.printf("Board ID %u: %u bytes\n", Board4_Data.id, len);
+        Serial.println(Board4_Data.status ? "Light ON\n" : "Light OFF\n");
+
+        if (Board4_Data.status != Board_4_Last_Received_State) {
+            Serial.println(Board4_Data.status ? "Light ON\n" : "Light OFF\n");
+            Board_4_Last_Received_State = Board4_Data.status;
+        }
+
+        board4["id"] = Board4_Data.id;
+        board4["state"] = Board4_Data.status ? "ON" : "OFF";
+
+        String jsonString4 = JSON.stringify(board4);
+        events.send(jsonString4.c_str(), "new_device_state", millis());
     }
 }
-
-const char index_html[] PROGMEM = R"rawliteral(
-<!DOCTYPE HTML><html>
-<head>
-  <title>ESP-NOW DASHBOARD</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.7.2/css/all.css" integrity="sha384-fnmOCqbTlWIlj8LyTjo7mOUStjsKC4pOpQbqyi7RrhN7udi9RwhKkMHpvLbHG9Sr" crossorigin="anonymous">
-  <link rel="icon" href="data:,">
-  <style>
-    html {font-family: Arial; display: inline-block; text-align: center;}
-    p {  font-size: 1.2rem;}
-    body {  margin: 0;}
-    .topnav { overflow: hidden; background-color: #2f4468; color: white; font-size: 1.7rem; }
-    .content { padding: 20px; }
-    .card { background-color: white; box-shadow: 2px 2px 12px 1px rgba(140,140,140,.5); }
-    .cards { max-width: 700px; margin: 0 auto; display: grid; grid-gap: 2rem; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
-    .reading { font-size: 2.8rem; }
-    .packet { color: #bebebe; }
-    .card.temperature { color: #fd7e14; }
-    .card.humidity { color: #1b78e2; }
-  </style>
-</head>
-<body>
-  <div class="topnav">
-    <h3></h3>
-  </div>
-  <div class="content">
-    <div class="cards">
-      <div class="card temperature">
-        <h4><i class="fas fa-thermometer-half"></i> BOARD #1 - TEMPERATURE</h4><p><span class="reading"><span id="t1"></span> &deg;C</span></p><p class="packet">Reading ID: <span id="rt1"></span></p>
-      </div>
-      <div class="card humidity">
-        <h4><i class="fas fa-tint"></i> BOARD #1 - HUMIDITY</h4><p><span class="reading"><span id="h1"></span> &percnt;</span></p><p class="packet">Reading ID: <span id="rh1"></span></p>
-      </div>
-      <div class="card light">
-        <h4><i class="fas fa-thermometer-half"></i> BOARD #2 - LIGHT</h4><p><span class="reading"><span id="t2"></span> &deg;C</span></p><p class="packet">Reading ID: <span id="rt2"></span></p>
-      </div>
-    </div>
-  </div>
-<script>
-if (!!window.EventSource) {
- var source = new EventSource('/events');
- 
- source.addEventListener('open', function(e) {
-  console.log("Events Connected");
- }, false);
- source.addEventListener('error', function(e) {
-  if (e.target.readyState != EventSource.OPEN) {
-    console.log("Events Disconnected");
-  }
- }, false);
- 
- source.addEventListener('message', function(e) {
-  console.log("message", e.data);
- }, false);
- 
- source.addEventListener('new_readings', function(e) {
-  console.log("new_readings", e.data);
-  var obj = JSON.parse(e.data);
-  document.getElementById("t"+obj.id).innerHTML = obj.temperature.toFixed(2);
-  document.getElementById("h"+obj.id).innerHTML = obj.humidity.toFixed(2);
-  document.getElementById("rt"+obj.id).innerHTML = obj.readingId;
-  document.getElementById("rh"+obj.id).innerHTML = obj.readingId;
- }, false);
-}
-</script>
-</body>
-</html>)rawliteral";
 
 void initDisplay() {
     display.begin();  // Initialize OLED display
@@ -202,16 +222,7 @@ void initDisplay() {
     delay(1000);
 }
 
-void initWiFi() {
-    // Set device as a Wi-Fi Station
-    // Serial.print("\nConnecting to ");
-    // Serial.println(ssid);
-    // WiFi.begin(ssid, password);
-    // while (WiFi.status() != WL_CONNECTED) {
-    //     delay(500);
-    //     Serial.print(".");
-    // }
-
+void initWiFiManager() {
     if (!wm.autoConnect("AutoConnectAP", "password")) {
         Serial.println("Failed to connect");
         ESP.restart();
@@ -237,6 +248,9 @@ void initEspNow() {
         delay(3000);
         ESP.restart();
     }
+    esp_wifi_set_promiscuous(true);
+    esp_wifi_set_channel(1, WIFI_SECOND_CHAN_NONE);
+    esp_wifi_set_promiscuous(false);
 }
 
 void registerPeers() {
@@ -246,30 +260,176 @@ void registerPeers() {
     peerInfo.encrypt = false;
     memset(&peerInfo, 0, sizeof(peerInfo));
 
-    // register Device peer
-    memcpy(peerInfo.peer_addr, remoteAddress, 6);
+    // register Board 1
+    memcpy(peerInfo.peer_addr, board_1_address, 6);
     if (esp_now_add_peer(&peerInfo) != ESP_OK) {
-        Serial.println("Failed to add peer");
+        Serial.println("Failed to add Board 1");
         return;
     }
 
-    memcpy(peerInfo.peer_addr, sensorBoardAddress, 6);
+    // register Board 2
+    memcpy(peerInfo.peer_addr, board_2_address, 6);
     if (esp_now_add_peer(&peerInfo) != ESP_OK) {
-        Serial.println("Failed to add peer");
+        Serial.println("Failed to add Board 2");
+        return;
+    }
+
+    // register Board 3
+    memcpy(peerInfo.peer_addr, board_3_address, 6);
+    if (esp_now_add_peer(&peerInfo) != ESP_OK) {
+        Serial.println("Failed to add Board 3");
+        return;
+    }
+
+    // register Board 4
+    memcpy(peerInfo.peer_addr, board_4_address, 6);
+    if (esp_now_add_peer(&peerInfo) != ESP_OK) {
+        Serial.println("Failed to add Board 4");
         return;
     }
 
     memcpy(peerInfo.peer_addr, AllBroadcastAddress, 6);
     if (esp_now_add_peer(&peerInfo) != ESP_OK) {
-        Serial.println("Failed to add peer");
+        Serial.println("Failed to add broadcast address");
         return;
     }
 }
 
+void Send_To__Board_1() {
+    outcome = esp_now_send(board_1_address, (uint8_t *)&Board1_Data,
+                           sizeof(Board1_Data));
+    Serial.println(outcome == ESP_OK ? "Successfully sent data to board 1"
+                                     : "Error sending data to board 1");
+}
+
+void Send_To__Board_2() {
+    outcome = esp_now_send(board_2_address, (uint8_t *)&Board2_Data,
+                           sizeof(Board2_Data));
+    Serial.println(outcome == ESP_OK ? "Successfully sent data to board 2"
+                                     : "Error sending data to board 2");
+}
+
+void Send_To__Board_3() {
+    outcome = esp_now_send(board_3_address, (uint8_t *)&Board3_Data,
+                           sizeof(Board3_Data));
+    Serial.println(outcome == ESP_OK ? "Successfully sent data to board 3"
+                                     : "Error sending data to board 3");
+}
+
+void Send_To__Board_4() {
+    outcome = esp_now_send(board_4_address, (uint8_t *)&Board4_Data,
+                           sizeof(Board4_Data));
+    Serial.println(outcome == ESP_OK ? "Successfully sent data to board 4"
+                                     : "Error sending data to board 4");
+}
+
+void Broadcast_Channel() {
+    int32_t channel = getWiFiChannel((wm.getWiFiSSID()).c_str());
+
+    Board1_Data.WiFi_Channel = channel;
+    Board2_Data.WiFi_Channel = channel;
+    Board3_Data.WiFi_Channel = channel;
+    Board4_Data.WiFi_Channel = channel;
+
+    Serial.print("Sending Wifi channel: ");
+    Serial.println(Board1_Data.WiFi_Channel);
+    Board1_Data.id = 0;
+    Board2_Data.id = 0;
+    Board3_Data.id = 0;
+    Board4_Data.id = 0;
+
+    Send_To__Board_1();
+    delay(100);
+    Send_To__Board_2();
+    delay(100);
+    Send_To__Board_3();
+    delay(100);
+    Send_To__Board_4();
+}
+
+void initSPIFFS() {
+    if (!SPIFFS.begin(true)) {
+        Serial.println("An Error has occurred while mounting SPIFFS");
+        return;
+    }
+    Serial.println("SPIFFS Init success");
+}
+
 void initServer() {
-    // Start web server
+    // Route for root / web page
     server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
-        request->send_P(200, "text/html", index_html);
+        request->send(SPIFFS, "/index.html", String(), false);
+    });
+
+    // Route to load style.css file
+    server.on("/style.css", HTTP_GET, [](AsyncWebServerRequest *request) {
+        request->send(SPIFFS, "/style.css", "text/css");
+    });
+
+    // Route to load javasript file
+    server.on("/event.js", HTTP_GET, [](AsyncWebServerRequest *request) {
+        request->send(SPIFFS, "/event.js", "text/javascript");
+    });
+
+    // Route to set GPIO to HIGH
+    server.on("/1/on", HTTP_GET, [](AsyncWebServerRequest *request) {
+        Board1_Data.id = 1;
+        Board1_Data.status = true;
+        Send_To__Board_1();
+        request->send(SPIFFS, "/index.html", String());
+    });
+
+    // Route to set GPIO to LOW
+    server.on("/1/off", HTTP_GET, [](AsyncWebServerRequest *request) {
+        Board1_Data.id = 1;
+        Board1_Data.status = false;
+        Send_To__Board_1();
+        request->send(SPIFFS, "/index.html", String());
+    });
+
+    server.on("/2/on", HTTP_GET, [](AsyncWebServerRequest *request) {
+        Board2_Data.id = 2;
+        Board2_Data.status = true;
+        Send_To__Board_2();
+        request->send(SPIFFS, "/index.html", String());
+    });
+
+    // Route to set GPIO to LOW
+    server.on("/2/off", HTTP_GET, [](AsyncWebServerRequest *request) {
+        Board2_Data.id = 2;
+        Board2_Data.status = false;
+        Send_To__Board_2();
+        request->send(SPIFFS, "/index.html", String());
+    });
+
+    server.on("/3/on", HTTP_GET, [](AsyncWebServerRequest *request) {
+        Board3_Data.id = 3;
+        Board3_Data.status = true;
+        Send_To__Board_3();
+        request->send(SPIFFS, "/index.html", String());
+    });
+
+    // Route to set GPIO to LOW
+    server.on("/3/off", HTTP_GET, [](AsyncWebServerRequest *request) {
+        Board3_Data.id = 3;
+        Board3_Data.status = false;
+        Send_To__Board_3();
+        request->send(SPIFFS, "/index.html", String());
+    });
+
+    server.on("/4/on", HTTP_GET, [](AsyncWebServerRequest *request) {
+        Board4_Data.id = 4;
+        Board4_Data.status = true;
+        Send_To__Board_4();
+        request->send(SPIFFS, "/index.html", String());
+    });
+
+    // Route to set GPIO to LOW
+    server.on("/4/off", HTTP_GET, [](AsyncWebServerRequest *request) {
+        Board4_Data.id = 4;
+        Board4_Data.status = false;
+        Send_To__Board_4();
+        request->send(SPIFFS, "/index.html", String());
     });
 
     events.onConnect([](AsyncEventSourceClient *client) {
@@ -286,75 +446,70 @@ void initServer() {
     server.begin();
 }
 
-void BroadcastSSID() {
-    strcpy(Board0.WiFiName, (wm.getWiFiSSID()).c_str());
-    strcpy(Board2_Data.WiFiName, (wm.getWiFiSSID()).c_str());
-    Serial.print("Sending Wifi named ");
-    Serial.println(Board0.WiFiName);
-    Board0.id = 0;
-    Board2_Data.id = 0;
-
-    esp_err_t outcome0 =
-        esp_now_send(remoteAddress, (uint8_t *)&Board0, sizeof(Board0));
-    Serial.println(outcome0 == ESP_OK
-                       ? "Successfully sent the wifi name to board 1"
-                       : "Error sending the wifi name to board 1");
-
-    delay(100);
-
-    esp_err_t outcome1 = esp_now_send(
-        sensorBoardAddress, (uint8_t *)&Board2_Data, sizeof(Board2_Data));
-    Serial.println(outcome1 == ESP_OK
-                       ? "Successfully sent the wifi name to board 2"
-                       : "Error sending the wifi name to board 2");
-}
-
 void setup() {
     // Initialize Serial Monitor
     Serial.begin(115200);
     // Set the device as a Station and Soft Access Point simultaneously
     WiFi.mode(WIFI_AP_STA);
-    pinMode(Switch, INPUT_PULLUP);
-    pinMode(LightStatus, OUTPUT);
+    pinMode(Board_1_Switch, INPUT_PULLUP);
+    pinMode(Board_1_State, OUTPUT);
+    pinMode(Board_2_Switch, INPUT_PULLUP);
+    pinMode(Board_2_State, OUTPUT);
+    pinMode(Board_3_Switch, INPUT_PULLUP);
+    pinMode(Board_3_State, OUTPUT);
+    pinMode(Board_4_Switch, INPUT_PULLUP);
+    pinMode(Board_4_State, OUTPUT);
 
+    initSPIFFS();
     initDisplay();
     initEspNow();
     registerPeers();
 
-    if (wm.getWiFiSSID() != "") BroadcastSSID();
+    if (wm.getWiFiSSID() != "") Broadcast_Channel();
 
-    initWiFi();
+    initWiFiManager();
     initServer();
 }
 
 void loop() {
-    digitalWrite(LightStatus, LastReceivedStatus);
+    digitalWrite(Board_1_State, Board_1_Last_Received_State);
+    digitalWrite(Board_2_State, Board_2_Last_Received_State);
+    digitalWrite(Board_3_State, Board_3_Last_Received_State);
+    digitalWrite(Board_4_State, Board_4_Last_Received_State);
 
-    if (!digitalRead(Switch)) {
-        // Command = !Command;
-        Board0.id = 1;
-        // Board0.status = Command;
-
-        LastReceivedStatus ? Board0.status = false : Board0.status = true;
-
-        esp_err_t outcome1 =
-            esp_now_send(remoteAddress, (uint8_t *)&Board0, sizeof(Board0));
-        Serial.println(outcome1 == ESP_OK ? "Sent with success"
-                                          : "Error sending the data");
-
+    if (!digitalRead(Board_1_Switch)) {
+        Board1_Data.id = 1;
+        Board1_Data.status = Board_1_Last_Received_State ? false : true;
+        Send_To__Board_1();
         delay(200);
     }
 
-    if (Board1_Data.status != LastReceivedStatus) {
-        Serial.println(Board1_Data.status ? "Light ON\n" : "Light OFF\n");
-        LastReceivedStatus = Board1_Data.status;
+    if (!digitalRead(Board_2_Switch)) {
+        Board2_Data.id = 2;
+        Board2_Data.status = Board_2_Last_Received_State ? false : true;
+        Send_To__Board_2();
+        delay(200);
+    }
+
+    if (!digitalRead(Board_3_Switch)) {
+        Board3_Data.id = 3;
+        Board3_Data.status = Board_3_Last_Received_State ? false : true;
+        Send_To__Board_3();
+        delay(200);
+    }
+
+    if (!digitalRead(Board_4_Switch)) {
+        Board4_Data.id = 4;
+        Board4_Data.status = Board_4_Last_Received_State ? false : true;
+        Send_To__Board_4();
+        delay(200);
     }
 
     Board1_Data.status ? display.drawStr(50, 20, "ON")
                        : display.drawStr(50, 20, "OFF");
 
-    display.drawStr(75, 50, temp);
-    display.drawStr(75, 60, hum);
+    display.drawStr(75, 50, temp_str);
+    display.drawStr(75, 60, hum_str);
 
     display.updateDisplayArea(board_1_tile_area_x_pos, board_1_tile_area_y_pos,
                               board_1_tile_area_width,

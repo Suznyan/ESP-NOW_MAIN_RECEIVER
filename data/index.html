@@ -1,0 +1,55 @@
+<!DOCTYPE HTML>
+<html>
+<!-- <base href="/"> -->
+
+<head>
+    <title>ESP32 Monitoring</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.7.2/css/all.css"
+        integrity="sha384-fnmOCqbTlWIlj8LyTjo7mOUStjsKC4pOpQbqyi7RrhN7udi9RwhKkMHpvLbHG9Sr" crossorigin="anonymous">
+    <link rel="icon" href="data:,">
+
+    <link rel="stylesheet" type="text/css" href="style.css">
+</head>
+
+<body>
+    <div class="topnav">
+        <h3></h3>
+    </div>
+    <div class="content">
+        <div class="cards">
+            <div class="card device_state">
+                <h4>BOARD #1</h4>
+                <p><i class="fas fa-lightbulb fa-2x" style="color:#c81919;"></i> <strong>LIGHT</strong></p>
+                <p>DEVICE state: <span id="state1"></span></p>
+                <p><a href="/1/on"><button class="button">ON</button></a></p>
+                <p><a href="/1/off"><button class="button button2">OFF</button></a></p>
+            </div>
+
+            <div class="card humidity">
+                <h4><i class="fas fa-thermometer-half"></i> BOARD #2</h4>
+                <p><span class="reading"><span id="t2"></span> &deg;C</span></p>
+                <p><span class="reading"><span id="h2"></span> &percnt;</span></p>
+                <p class="packet">Reading ID: <span id="rt2"></span></p>
+                <p>DEVICE state: <span id="state2"></span></p>
+                <p><a href="/2/on"><button class="button">ON</button></a></p>
+                <p><a href="/2/off"><button class="button button2">OFF</button></a></p>
+            </div>
+            <div class="card device_state">
+                <h4><i class="fas fa-tint"></i> BOARD #3</h4>
+                <p>DEVICE state: <span id="state3"></span></p>
+                <p><a href="/3/on"><button class="button">ON</button></a></p>
+                <p><a href="/3/off"><button class="button button2">OFF</button></a></p>
+            </div>
+            <div class="card device_state">
+                <h4><i class="fas fa-tint"></i> BOARD #4</h4>
+                <p>DEVICE state: <span id="state4"></span></p>
+                <p><a href="/4/on"><button class="button">ON</button></a></p>
+                <p><a href="/4/off"><button class="button button2">OFF</button></a></p>
+            </div>
+        </div>
+    </div>
+    <script src="event.js"></script>
+</body>
+
+</html>
