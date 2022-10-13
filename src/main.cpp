@@ -13,6 +13,11 @@
 
 #define WIFI_TRIGGER 13
 
+// Stores last time scheduled ping was executed
+unsigned long previousMillis = 0;
+// Interval at which to ping others
+const long interval = 50000;
+
 //---------------------------
 // Oled display pins
 #define CLK_PIN 22
@@ -37,22 +42,6 @@
 #define Board_4_State 25
 #define Board_4_Switch 12
 //---------------------------
-
-// Update area left position (in tiles)
-const uint8_t board_1_tile_area_x_pos = 6;
-// Update area upper position (distance from top in tiles)
-const uint8_t board_1_tile_area_y_pos = 1;
-const uint8_t board_1_tile_area_width = 3;
-// this will allow cour18 chars to fit into the area
-const uint8_t board_1_tile_area_height = 2;
-
-// Update area left position (in tiles)
-const uint8_t board_2_tile_area_x_pos = 9;
-// Update area upper position (distance from top in tiles)
-const uint8_t board_2_tile_area_y_pos = 5;
-const uint8_t board_2_tile_area_width = 4;
-// this will allow cour18 chars to fit into the area
-const uint8_t board_2_tile_area_height = 3;
 
 uint8_t AllBroadcastAddress[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
 uint8_t board_1_address[] = {0x7C, 0x9E, 0xBD, 0x48, 0x71, 0xE8};
@@ -93,15 +82,21 @@ bool Board_2_Last_Received_State;
 bool Board_3_Last_Received_State;
 bool Board_4_Last_Received_State;
 bool portalRunning = false;
-bool Slave_On_Correct_Channel = true;
-byte Slave_on_wrong_channel = 0;
+bool Slave_1_On_Correct_Channel = true;
+bool Slave_2_On_Correct_Channel = true;
+bool Slave_3_On_Correct_Channel = true;
+bool Slave_4_On_Correct_Channel = true;
 bool isServerInit = false;
 
-char temp_str[50];
-char hum_str[50];
+char ip_str[20];
+char on_str[3] = "ON";
+char off_str[4] = "OFF";
+char str1[20];
+char str2[22];
+char str3[20];
+char str4[20];
 
 // Structure example to receive data
-// Must match the sender structure
 typedef struct {
     byte id : 4;
     byte WiFi_Channel;
@@ -135,7 +130,7 @@ int32_t getWiFiChannel(const char *ssid) {
     return 0;
 }
 
-int32_t channel = CHANNEL;
+// int32_t channel = CHANNEL;
 
 void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
     char macStr[18];
@@ -149,21 +144,26 @@ void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
                                                   : "Delivery Fail");
     if (status != ESP_NOW_SEND_SUCCESS) {
         Serial.println("Raising flag");
-        Slave_On_Correct_Channel = false;
-        if (Slave_on_wrong_channel == 0) {
-            if (strstr(macStr, board_1_address_str)) {
-                Slave_on_wrong_channel = 1;
-            } else if (strstr(macStr, board_2_address_str)) {
-                Slave_on_wrong_channel = 2;
-            } else if (strstr(macStr, board_3_address_str)) {
-                Slave_on_wrong_channel = 3;
-            } else if (strstr(macStr, board_4_address_str)) {
-                Slave_on_wrong_channel = 4;
-            }
+        if (strstr(macStr, board_1_address_str)) {
+            Slave_1_On_Correct_Channel = false;
+        } else if (strstr(macStr, board_2_address_str)) {
+            Slave_2_On_Correct_Channel = false;
+        } else if (strstr(macStr, board_3_address_str)) {
+            Slave_3_On_Correct_Channel = false;
+        } else if (strstr(macStr, board_4_address_str)) {
+            Slave_4_On_Correct_Channel = false;
         }
+
     } else {
-        Slave_On_Correct_Channel = true;
-        Slave_on_wrong_channel = 0;
+        if (strstr(macStr, board_1_address_str)) {
+            Slave_1_On_Correct_Channel = true;
+        } else if (strstr(macStr, board_2_address_str)) {
+            Slave_2_On_Correct_Channel = true;
+        } else if (strstr(macStr, board_3_address_str)) {
+            Slave_3_On_Correct_Channel = true;
+        } else if (strstr(macStr, board_4_address_str)) {
+            Slave_4_On_Correct_Channel = true;
+        }
     }
 }
 
@@ -177,7 +177,9 @@ void OnDataRecv(const uint8_t *mac_addr, const uint8_t *incomingData, int len) {
     Serial.println(macStr);
 
     if (strstr(macStr, board_1_address_str)) {
+        Slave_1_On_Correct_Channel = true;
         memcpy(&Board1_Data, incomingData, sizeof(Board1_Data));
+        snprintf(str1, 20, "1.%s|", Board1_Data.status ? on_str : off_str);
         Serial.printf("Board ID %u: %u bytes\n", Board1_Data.id, len);
 
         if (Board1_Data.status != Board_1_Last_Received_State) {
@@ -194,9 +196,11 @@ void OnDataRecv(const uint8_t *mac_addr, const uint8_t *incomingData, int len) {
     }
 
     if (strstr(macStr, board_2_address_str)) {
+        Slave_2_On_Correct_Channel = true;
         memcpy(&Board2_Data, incomingData, sizeof(Board2_Data));
-        sprintf(temp_str, "%4.2f", Board2_Data.temp);
-        sprintf(hum_str, "%4.2f", Board2_Data.hum);
+        snprintf(str2, 22, "2.%s|%4.2f°C|%4.2f%%",
+                 Board2_Data.status ? on_str : off_str, Board2_Data.temp,
+                 Board2_Data.hum);
         Serial.printf("Board ID %u: %u bytes\n", Board2_Data.id, len);
         Serial.printf("Temperature: %4.2f \n", Board2_Data.temp);
         Serial.printf("Humidity: %4.2f \n", Board2_Data.hum);
@@ -216,7 +220,9 @@ void OnDataRecv(const uint8_t *mac_addr, const uint8_t *incomingData, int len) {
     }
 
     if (strstr(macStr, board_3_address_str)) {
+        Slave_3_On_Correct_Channel = true;
         memcpy(&Board3_Data, incomingData, sizeof(Board3_Data));
+        snprintf(str3, 20, "3.%s|", Board3_Data.status ? on_str : off_str);
         Serial.printf("Board ID %u: %u bytes\n", Board3_Data.id, len);
 
         if (Board3_Data.status != Board_3_Last_Received_State) {
@@ -232,7 +238,9 @@ void OnDataRecv(const uint8_t *mac_addr, const uint8_t *incomingData, int len) {
     }
 
     if (strstr(macStr, board_4_address_str)) {
+        Slave_4_On_Correct_Channel = true;
         memcpy(&Board4_Data, incomingData, sizeof(Board4_Data));
+        snprintf(str4, 20, "4.%s|", Board4_Data.status ? on_str : off_str);
         Serial.printf("Board ID %u: %u bytes\n", Board4_Data.id, len);
 
         if (Board4_Data.status != Board_4_Last_Received_State) {
@@ -250,16 +258,10 @@ void OnDataRecv(const uint8_t *mac_addr, const uint8_t *incomingData, int len) {
 
 void initDisplay() {
     display.begin();  // Initialize OLED display
-    display.clearBuffer();
+    display.setPowerSave(0);
     display.setContrast(1);
-    display.setFont(u8g2_font_ncenB08_tr);  // choose a suitable font
-    display.drawStr(0, 10, "Board 1");
-    display.drawStr(0, 20, "Light");
-    display.drawStr(0, 40, "Board 2");
-    display.drawStr(0, 50, "Temperature:");
-    display.drawStr(0, 60, "Humidity:");
-    display.sendBuffer();  // transfer internal memory to the display
-    delay(1000);
+    display.enableUTF8Print();  // enable UTF8 support for the Arduino print()
+    display.setFont(u8g2_font_t0_11_tf);  // choose a suitable font
 }
 
 void SendTo(int board) {
@@ -383,8 +385,8 @@ void initServer() {
     isServerInit = true;
 }
 
-void Broadcast_Channel_To(byte Board_Index) {
-    channel = getWiFiChannel((wm.getWiFiSSID()).c_str());
+void Broadcast_Channel_To(byte Board_Index, byte channel) {
+    // channel = getWiFiChannel((wm.getWiFiSSID()).c_str());
     // clean up ram
     WiFi.scanDelete();
     // Serial.printf("channel: %d\n", channel);
@@ -416,8 +418,9 @@ void Broadcast_Channel_To(byte Board_Index) {
     }
 }
 
-void initWiFiManager() {  
+void initWiFiManager() {
     wm.setConfigPortalTimeout(30);
+    wm.setConnectTimeout(20);
     // connect after portal save toggle
     wm.setSaveConnect(false);  // do not connect, only save
     portalRunning = true;
@@ -430,10 +433,10 @@ void initWiFiManager() {
         portalRunning = false;
         isServerInit = false;
         return;
-    }
-    portalRunning = false;
+    }    
     // if you get here you have connected to the WiFi
     Serial.println("Connected");
+    portalRunning = false;
 
     // Print local IP address
     Serial.println("");
@@ -441,6 +444,7 @@ void initWiFiManager() {
     Serial.println(WiFi.localIP());
     Serial.print("Wi-Fi Channel: ");
     Serial.println(WiFi.channel());
+    snprintf(ip_str, 20, "IP: %s", WiFi.localIP().toString().c_str());
 
     // If connected to WIFI, start server
     initServer();
@@ -474,30 +478,33 @@ void registerPeers() {
 }
 
 void Channeling_Monitor() {
-    while (!Slave_On_Correct_Channel) {
-        Serial.println("Disconnect from wifi and switch back to channel 1");
-        WiFi.disconnect();
-        esp_wifi_set_promiscuous(true);
-        esp_wifi_set_channel(1, WIFI_SECOND_CHAN_NONE);
-        esp_wifi_set_promiscuous(false);
+    while (!Slave_1_On_Correct_Channel || !Slave_2_On_Correct_Channel ||
+           !Slave_3_On_Correct_Channel || !Slave_4_On_Correct_Channel) {
+        Serial.println("!!Fixing connection!!");
+        // WiFi.printDiag(Serial);
         if (isServerInit) {
-            switch (Slave_on_wrong_channel) {
-                case 1:
-                    Broadcast_Channel_To(1);
-                    break;
-                case 2:
-                    Broadcast_Channel_To(2);
-                    break;
-                case 3:
-                    Broadcast_Channel_To(3);
-                    break;
-                case 4:
-                    Broadcast_Channel_To(4);
-                    break;
-                default:
-                    break;
-            }
+            if (Slave_1_On_Correct_Channel) Broadcast_Channel_To(1, CHANNEL);
+            if (Slave_2_On_Correct_Channel) Broadcast_Channel_To(2, CHANNEL);
+            // if(Slave_3_On_Correct_Channel){Broadcast_Channel_To(3, CHANNEL);}
+            // if(Slave_4_On_Correct_Channel){Broadcast_Channel_To(4, CHANNEL);}
+
+            WiFi.disconnect();
+            esp_wifi_set_promiscuous(true);
+            esp_wifi_set_channel(1, WIFI_SECOND_CHAN_NONE);
+            esp_wifi_set_promiscuous(false);
+            Broadcast_Channel_To(1, getWiFiChannel((wm.getWiFiSSID()).c_str()));
+            Broadcast_Channel_To(2, getWiFiChannel((wm.getWiFiSSID()).c_str()));
+        } else {
+            esp_wifi_set_promiscuous(true);
+            esp_wifi_set_channel(1, WIFI_SECOND_CHAN_NONE);
+            esp_wifi_set_promiscuous(false);
+
+            Slave_1_On_Correct_Channel = true;
+            Slave_2_On_Correct_Channel = true;
+            Slave_3_On_Correct_Channel = true;
+            Slave_4_On_Correct_Channel = true;
         }
+        delay(3000);
     }
 }
 
@@ -511,9 +518,9 @@ void initSPIFFS() {
 
 void CheckButton() {
     // is auto timeout portal running
-    if (portalRunning) {
-        wm.process();
-    }
+    // if (portalRunning) {
+    //     wm.process();
+    // }
 
     // is configuration portal requested?
     if (!digitalRead(WIFI_TRIGGER)) {
@@ -564,17 +571,18 @@ void IndicatorLED() {
 }
 
 void DisplayUpdate() {
-    display.drawStr(50, 20, Board_1_Last_Received_State ? "ON" : "OFF");
-    display.drawStr(75, 50, temp_str);
-    display.drawStr(75, 60, hum_str);
-
-    display.updateDisplayArea(board_1_tile_area_x_pos, board_1_tile_area_y_pos,
-                              board_1_tile_area_width,
-                              board_1_tile_area_height);
-
-    display.updateDisplayArea(board_2_tile_area_x_pos, board_2_tile_area_y_pos,
-                              board_2_tile_area_width,
-                              board_2_tile_area_height);
+    display.clearBuffer();
+    display.setCursor(0, 10);
+    display.print(ip_str);
+    display.setCursor(0, 25);
+    display.print(str1);
+    display.setCursor(0, 35);
+    display.print(str2);
+    display.setCursor(0, 45);
+    display.print(str3);
+    display.setCursor(0, 55);
+    display.print(str4);
+    display.sendBuffer();
 }
 
 void setup() {
@@ -596,26 +604,35 @@ void setup() {
     pinMode(Board_4_State, OUTPUT);
     pinMode(WIFI_TRIGGER, INPUT_PULLUP);
 
-    esp_wifi_set_promiscuous(true);
-    esp_wifi_set_channel(1, WIFI_SECOND_CHAN_NONE);
-    esp_wifi_set_promiscuous(false);
-    WiFi.printDiag(Serial);
+    initEspNow();
+    initSPIFFS();
+    initDisplay();
+    registerPeers();
 
-    if (wm.getWiFiSSID() != "") {
+    if (wm.getWiFiIsSaved()) {
+        esp_wifi_set_promiscuous(true);
+        esp_wifi_set_channel(1, WIFI_SECOND_CHAN_NONE);
+        esp_wifi_set_promiscuous(false);
         // for (int i = 1; i < 5; i++) {
         //     Broadcast_Channel_To(i);
         // }
-        Broadcast_Channel_To(1);
+        Broadcast_Channel_To(1, getWiFiChannel((wm.getWiFiSSID()).c_str()));
+        Broadcast_Channel_To(2, getWiFiChannel((wm.getWiFiSSID()).c_str()));
     }
 
-    initSPIFFS();
-    initDisplay();
-    initEspNow();
-    registerPeers();
     initWiFiManager();
 }
 
 void loop() {
+    while (WiFi.status() != WL_CONNECTED && isServerInit == true &&
+           Slave_1_On_Correct_Channel == true &&
+           Slave_2_On_Correct_Channel == true &&
+           Slave_3_On_Correct_Channel == true &&
+           Slave_4_On_Correct_Channel == true) {
+        Serial.println("No wifi connection, reconnecting");
+        initWiFiManager();
+    }
+
     CheckButton();
     IndicatorLED();
     DisplayUpdate();
@@ -625,14 +642,24 @@ void loop() {
     static unsigned long lastEventTime = millis();
     static const unsigned long EVENT_INTERVAL_MS = 5000;
     if ((millis() - lastEventTime) > EVENT_INTERVAL_MS) {
-        while (WiFi.status() != WL_CONNECTED && isServerInit == true &&
-               Slave_On_Correct_Channel == true) {
-            Serial.println("No wifi connection, Rebooting");
-            delay(3000);
-            initWiFiManager();
-        }
-
         events.send("ping", NULL, millis());
         lastEventTime = millis();
+    }
+
+    // Ping peers
+    unsigned long currentMillis = millis();
+    if (currentMillis - previousMillis >= interval) {
+        // Save the last time a new reading was published
+        previousMillis = currentMillis;
+        // Set values to send
+        Serial.println("Scheduled ping");
+        // for (int i = 1; i < 5; i++) {
+        //     SendTo(i);
+        //     delay(1000);
+        // }
+        SendTo(1);
+        delay(1000);
+        SendTo(2);
+        delay(1000);
     }
 }
