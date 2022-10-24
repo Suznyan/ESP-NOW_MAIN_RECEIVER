@@ -16,7 +16,7 @@
 // Stores last time scheduled ping was executed
 unsigned long previousMillis = 0;
 // Interval at which to ping others
-const long interval = 50000;
+const long interval = 240000;
 
 //---------------------------
 // Oled display pins
@@ -89,10 +89,8 @@ bool Slave_4_On_Correct_Channel = true;
 bool isServerInit = false;
 
 char ip_str[20];
-char on_str[3] = "ON";
-char off_str[4] = "OFF";
 char str1[20];
-char str2[22];
+char str2[20];
 char str3[20];
 char str4[20];
 
@@ -129,8 +127,6 @@ int32_t getWiFiChannel(const char *ssid) {
     }
     return 0;
 }
-
-// int32_t channel = CHANNEL;
 
 void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
     char macStr[18];
@@ -180,7 +176,7 @@ void OnDataRecv(const uint8_t *mac_addr, const uint8_t *incomingData, int len) {
     if (strstr(macStr, board_1_address_str)) {
         Slave_1_On_Correct_Channel = true;
         memcpy(&Board1_Data, incomingData, sizeof(Board1_Data));
-        snprintf(str1, 20, "1.%s|", Board1_Data.status ? on_str : off_str);
+        snprintf(str1, 20, "1.%s|", Board1_Data.status ? "ON" : "OFF");
         Serial.printf("Board ID %u: %u bytes\n", Board1_Data.id, len);
 
         if (Board1_Data.status != Board_1_Last_Received_State) {
@@ -201,7 +197,7 @@ void OnDataRecv(const uint8_t *mac_addr, const uint8_t *incomingData, int len) {
         memcpy(&Board2_Data, incomingData, sizeof(Board2_Data));
         float con_temp = (float)Board2_Data.temp / 100;
         snprintf(str2, 22, "2.%s|%.1f°C|%d%%",
-                 Board2_Data.status ? on_str : off_str, con_temp,
+                 Board2_Data.status ? "ON" : "OFF", con_temp,
                  Board2_Data.hum);
         Serial.printf("Board ID %u: %u bytes\n", Board2_Data.id, len);
         Serial.printf("Temperature: %.1f\n", con_temp);
@@ -224,7 +220,7 @@ void OnDataRecv(const uint8_t *mac_addr, const uint8_t *incomingData, int len) {
     if (strstr(macStr, board_3_address_str)) {
         Slave_3_On_Correct_Channel = true;
         memcpy(&Board3_Data, incomingData, sizeof(Board3_Data));
-        snprintf(str3, 20, "3.%s|", Board3_Data.status ? on_str : off_str);
+        snprintf(str3, 20, "3.%s|", Board3_Data.status ? "ON" : "OFF");
         Serial.printf("Board ID %u: %u bytes\n", Board3_Data.id, len);
 
         if (Board3_Data.status != Board_3_Last_Received_State) {
@@ -242,7 +238,7 @@ void OnDataRecv(const uint8_t *mac_addr, const uint8_t *incomingData, int len) {
     if (strstr(macStr, board_4_address_str)) {
         Slave_4_On_Correct_Channel = true;
         memcpy(&Board4_Data, incomingData, sizeof(Board4_Data));
-        snprintf(str4, 20, "4.%s|", Board4_Data.status ? on_str : off_str);
+        snprintf(str4, 20, "4.%s|", Board4_Data.status ? "ON" : "OFF");
         Serial.printf("Board ID %u: %u bytes\n", Board4_Data.id, len);
 
         if (Board4_Data.status != Board_4_Last_Received_State) {
@@ -519,11 +515,6 @@ void initSPIFFS() {
 }
 
 void CheckButton() {
-    // is auto timeout portal running
-    // if (portalRunning) {
-    //     wm.process();
-    // }
-
     // is configuration portal requested?
     if (!digitalRead(WIFI_TRIGGER)) {
         if (!portalRunning) {
@@ -533,34 +524,6 @@ void CheckButton() {
             Serial.println("Stopping Portal");
             initWiFiManager();
         }
-        delay(200);
-    }
-
-    if (!digitalRead(Board_1_Switch)) {
-        Board1_Data.id = 1;
-        Board1_Data.status = Board_1_Last_Received_State ? false : true;
-        SendTo(1);
-        delay(200);
-    }
-
-    if (!digitalRead(Board_2_Switch)) {
-        Board2_Data.id = 2;
-        Board2_Data.status = Board_2_Last_Received_State ? false : true;
-        SendTo(2);
-        delay(200);
-    }
-
-    if (!digitalRead(Board_3_Switch)) {
-        Board3_Data.id = 3;
-        Board3_Data.status = Board_3_Last_Received_State ? false : true;
-        SendTo(3);
-        delay(200);
-    }
-
-    if (!digitalRead(Board_4_Switch)) {
-        Board4_Data.id = 4;
-        Board4_Data.status = Board_4_Last_Received_State ? false : true;
-        SendTo(4);
         delay(200);
     }
 }
@@ -587,6 +550,54 @@ void DisplayUpdate() {
     display.sendBuffer();
 }
 
+void Button1_interrupt_handler() {
+    static unsigned long last_interrupt_time = 0;
+    unsigned long interrupt_time = millis();
+    // if interrupt come fast than 200ms, assume it's a bounce and ignore
+    if (interrupt_time - last_interrupt_time > 400) {
+        Board1_Data.id = 1;
+        Board1_Data.status = Board_1_Last_Received_State ? false : true;
+        SendTo(1);
+    }
+    last_interrupt_time = interrupt_time;
+}
+
+void Button2_interrupt_handler() {
+    static unsigned long last_interrupt_time = 0;
+    unsigned long interrupt_time = millis();
+    // if interrupt come fast than 200ms, assume it's a bounce and ignore
+    if (interrupt_time - last_interrupt_time > 400) {
+        Board2_Data.id = 2;
+        Board2_Data.status = Board_2_Last_Received_State ? false : true;
+        SendTo(2);
+    }
+    last_interrupt_time = interrupt_time;
+}
+
+void Button3_interrupt_handler() {
+    static unsigned long last_interrupt_time = 0;
+    unsigned long interrupt_time = millis();
+    // if interrupt come fast than 200ms, assume it's a bounce and ignore
+    if (interrupt_time - last_interrupt_time > 400) {
+        Board3_Data.id = 3;
+        Board3_Data.status = Board_3_Last_Received_State ? false : true;
+        SendTo(3);
+    }
+    last_interrupt_time = interrupt_time;
+}
+
+void Button4_interrupt_handler() {
+    static unsigned long last_interrupt_time = 0;
+    unsigned long interrupt_time = millis();
+    // if interrupt come fast than 200ms, assume it's a bounce and ignore
+    if (interrupt_time - last_interrupt_time > 400) {
+        Board4_Data.id = 4;
+        Board4_Data.status = Board_4_Last_Received_State ? false : true;
+        SendTo(4);
+    }
+    last_interrupt_time = interrupt_time;
+}
+
 void setup() {
     // Initialize Serial Monitor
     Serial.begin(115200);
@@ -605,6 +616,11 @@ void setup() {
     pinMode(Board_4_Switch, INPUT_PULLUP);
     pinMode(Board_4_State, OUTPUT);
     pinMode(WIFI_TRIGGER, INPUT_PULLUP);
+
+    attachInterrupt(Board_1_Switch, Button1_interrupt_handler, FALLING);
+    attachInterrupt(Board_2_Switch, Button2_interrupt_handler, FALLING);
+    attachInterrupt(Board_3_Switch, Button3_interrupt_handler, FALLING);
+    attachInterrupt(Board_4_Switch, Button4_interrupt_handler, FALLING);
 
     initEspNow();
     initSPIFFS();
