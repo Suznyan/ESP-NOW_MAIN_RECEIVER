@@ -17,8 +17,8 @@ if (!!window.EventSource) {
     source.addEventListener('new_readings', function (e) {
         console.log("new_readings", e.data);
         var obj = JSON.parse(e.data);
-        document.getElementById("t" + obj.id).innerHTML = obj.temperature.toFixed(2);
-        document.getElementById("h" + obj.id).innerHTML = obj.humidity.toFixed(2);
+        document.getElementById("t" + obj.id).innerHTML = obj.temperature.toFixed(1);
+        document.getElementById("h" + obj.id).innerHTML = obj.humidity;
         document.getElementById("rt" + obj.id).innerHTML = obj.readingId;
         document.getElementById("rh" + obj.id).innerHTML = obj.readingId;
     }, false);

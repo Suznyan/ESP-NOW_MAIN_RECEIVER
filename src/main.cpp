@@ -107,8 +107,8 @@ typedef struct {
     byte id : 4;
     byte WiFi_Channel;
     bool status;
-    float temp;
-    float hum;
+    int temp;
+    byte hum : 7;
     int readingId;
 } Sensor_Reading_Msg_Struct;
 
@@ -142,6 +142,7 @@ void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
     Serial.print("Last Packet Send Status:\t");
     Serial.println(status == ESP_NOW_SEND_SUCCESS ? "Delivery Success"
                                                   : "Delivery Fail");
+    // If sent failed raise flag base on the corresponding mac address
     if (status != ESP_NOW_SEND_SUCCESS) {
         Serial.println("Raising flag");
         if (strstr(macStr, board_1_address_str)) {
@@ -153,8 +154,8 @@ void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
         } else if (strstr(macStr, board_4_address_str)) {
             Slave_4_On_Correct_Channel = false;
         }
-
     } else {
+        // If sent successfully remove the flag of said address
         if (strstr(macStr, board_1_address_str)) {
             Slave_1_On_Correct_Channel = true;
         } else if (strstr(macStr, board_2_address_str)) {
@@ -198,12 +199,13 @@ void OnDataRecv(const uint8_t *mac_addr, const uint8_t *incomingData, int len) {
     if (strstr(macStr, board_2_address_str)) {
         Slave_2_On_Correct_Channel = true;
         memcpy(&Board2_Data, incomingData, sizeof(Board2_Data));
-        snprintf(str2, 22, "2.%s|%4.2f°C|%4.2f%%",
-                 Board2_Data.status ? on_str : off_str, Board2_Data.temp,
+        float con_temp = (float)Board2_Data.temp / 100;
+        snprintf(str2, 22, "2.%s|%.1f°C|%d%%",
+                 Board2_Data.status ? on_str : off_str, con_temp,
                  Board2_Data.hum);
         Serial.printf("Board ID %u: %u bytes\n", Board2_Data.id, len);
-        Serial.printf("Temperature: %4.2f \n", Board2_Data.temp);
-        Serial.printf("Humidity: %4.2f \n", Board2_Data.hum);
+        Serial.printf("Temperature: %.1f\n", con_temp);
+        Serial.printf("Humidity: %d \n", Board2_Data.hum);
         Serial.printf("readingID value: %d \n", Board2_Data.readingId);
 
         if (Board2_Data.status != Board_2_Last_Received_State) {
@@ -212,7 +214,7 @@ void OnDataRecv(const uint8_t *mac_addr, const uint8_t *incomingData, int len) {
         }
 
         board2["id"] = Board2_Data.id;
-        board2["temperature"] = Board2_Data.temp;
+        board2["temperature"] = con_temp;
         board2["humidity"] = Board2_Data.hum;
         board2["readingId"] = String(Board2_Data.readingId);
         String jsonString2 = JSON.stringify(board2);
@@ -433,7 +435,7 @@ void initWiFiManager() {
         portalRunning = false;
         isServerInit = false;
         return;
-    }    
+    }
     // if you get here you have connected to the WiFi
     Serial.println("Connected");
     portalRunning = false;
@@ -616,7 +618,7 @@ void setup() {
         // for (int i = 1; i < 5; i++) {
         //     Broadcast_Channel_To(i);
         // }
-        Broadcast_Channel_To(1, getWiFiChannel((wm.getWiFiSSID()).c_str()));
+        // Broadcast_Channel_To(1, getWiFiChannel((wm.getWiFiSSID()).c_str()));
         Broadcast_Channel_To(2, getWiFiChannel((wm.getWiFiSSID()).c_str()));
     }
 
@@ -657,8 +659,8 @@ void loop() {
         //     SendTo(i);
         //     delay(1000);
         // }
-        SendTo(1);
-        delay(1000);
+        // SendTo(1);
+        // delay(1000);
         SendTo(2);
         delay(1000);
     }
