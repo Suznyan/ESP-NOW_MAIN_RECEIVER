@@ -99,7 +99,7 @@ typedef struct {
     byte id : 4;
     byte WiFi_Channel;
     bool status;
-} Device_State_Msg_Struct;
+} Default_Struct;
 
 typedef struct {
     byte id : 4;
@@ -108,14 +108,22 @@ typedef struct {
     int temp;
     byte hum : 7;
     int readingId;
-} Sensor_Reading_Msg_Struct;
+} Board2_Data_Struct;
+
+typedef struct {
+    byte id : 4;
+    byte WiFi_Channel;
+    bool status;
+    int temp;
+    int readingID;
+} Board3_Data_Struct;
 
 esp_err_t outcome;
 
-Device_State_Msg_Struct Board1_Data;
-Device_State_Msg_Struct Board3_Data;
-Device_State_Msg_Struct Board4_Data;
-Sensor_Reading_Msg_Struct Board2_Data;
+Default_Struct Board1_Data;
+Board2_Data_Struct Board2_Data;
+Board3_Data_Struct Board3_Data;
+Default_Struct Board4_Data;
 
 int32_t getWiFiChannel(const char *ssid) {
     if (int32_t n = WiFi.scanNetworks()) {
@@ -185,7 +193,7 @@ void OnDataRecv(const uint8_t *mac_addr, const uint8_t *incomingData, int len) {
             Board_1_Last_Received_State = Board1_Data.status;
         }
 
-        board1["id"] = Board1_Data.id;
+        board1["id"] = 1;
         board1["state"] = Board1_Data.status ? "ON" : "OFF";
 
         String jsonString1 = JSON.stringify(board1);
@@ -195,12 +203,11 @@ void OnDataRecv(const uint8_t *mac_addr, const uint8_t *incomingData, int len) {
     if (strstr(macStr, board_2_address_str)) {
         Slave_2_On_Correct_Channel = true;
         memcpy(&Board2_Data, incomingData, sizeof(Board2_Data));
-        float con_temp = (float)Board2_Data.temp / 100;
         snprintf(str2, 22, "2.%s|%.1f°C|%d%%",
-                 Board2_Data.status ? "ON" : "OFF", con_temp,
-                 Board2_Data.hum);
+                 Board2_Data.status ? "ON" : "OFF",
+                 (float)Board2_Data.temp / 100, Board2_Data.hum);
         Serial.printf("Board ID %u: %u bytes\n", Board2_Data.id, len);
-        Serial.printf("Temperature: %.1f\n", con_temp);
+        Serial.printf("Temperature: %.1f\n", (float)Board2_Data.temp / 100);
         Serial.printf("Humidity: %d \n", Board2_Data.hum);
         Serial.printf("readingID value: %d \n", Board2_Data.readingId);
 
@@ -209,30 +216,35 @@ void OnDataRecv(const uint8_t *mac_addr, const uint8_t *incomingData, int len) {
             Board_2_Last_Received_State = Board2_Data.status;
         }
 
-        board2["id"] = Board2_Data.id;
-        board2["temperature"] = con_temp;
+        board2["id"] = 2;
+        board2["temperature"] = (float)Board2_Data.temp / 100;
         board2["humidity"] = Board2_Data.hum;
         board2["readingId"] = String(Board2_Data.readingId);
         String jsonString2 = JSON.stringify(board2);
-        events.send(jsonString2.c_str(), "new_readings", millis());
+        events.send(jsonString2.c_str(), "b2new_readings", millis());
     }
 
     if (strstr(macStr, board_3_address_str)) {
         Slave_3_On_Correct_Channel = true;
         memcpy(&Board3_Data, incomingData, sizeof(Board3_Data));
-        snprintf(str3, 20, "3.%s|", Board3_Data.status ? "ON" : "OFF");
+        snprintf(str3, 20, "3.%s|%.2f°C", Board3_Data.status ? "ON" : "OFF",
+                 (float)Board3_Data.temp / 100);
         Serial.printf("Board ID %u: %u bytes\n", Board3_Data.id, len);
+        Serial.printf("Temperature: %.2f\n", (float)Board3_Data.temp / 100);
+        Serial.printf("readingID value: %d \n", Board3_Data.readingID);
 
         if (Board3_Data.status != Board_3_Last_Received_State) {
             Serial.println(Board3_Data.status ? "Light ON\n" : "Light OFF\n");
             Board_3_Last_Received_State = Board3_Data.status;
         }
 
-        board3["id"] = Board3_Data.id;
+        board3["id"] = 3;
         board3["state"] = Board3_Data.status ? "ON" : "OFF";
+        board3["temperature"] = (float)Board3_Data.temp / 100;
+        board3["readingId"] = String(Board3_Data.readingID);
 
         String jsonString3 = JSON.stringify(board3);
-        events.send(jsonString3.c_str(), "new_device_state", millis());
+        events.send(jsonString3.c_str(), "b3new_reading", millis());
     }
 
     if (strstr(macStr, board_4_address_str)) {
@@ -246,7 +258,7 @@ void OnDataRecv(const uint8_t *mac_addr, const uint8_t *incomingData, int len) {
             Board_4_Last_Received_State = Board4_Data.status;
         }
 
-        board4["id"] = Board4_Data.id;
+        board4["id"] = 4;
         board4["state"] = Board4_Data.status ? "ON" : "OFF";
 
         String jsonString4 = JSON.stringify(board4);
@@ -636,6 +648,7 @@ void setup() {
         // }
         // Broadcast_Channel_To(1, getWiFiChannel((wm.getWiFiSSID()).c_str()));
         Broadcast_Channel_To(2, getWiFiChannel((wm.getWiFiSSID()).c_str()));
+        Broadcast_Channel_To(3, getWiFiChannel((wm.getWiFiSSID()).c_str()));
     }
 
     initWiFiManager();
@@ -678,6 +691,7 @@ void loop() {
         // SendTo(1);
         // delay(1000);
         SendTo(2);
+        SendTo(3);
         delay(1000);
     }
 }

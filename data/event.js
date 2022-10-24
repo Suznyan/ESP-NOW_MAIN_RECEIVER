@@ -14,13 +14,19 @@ if (!!window.EventSource) {
         console.log("message", e.data);
     }, false);
 
-    source.addEventListener('new_readings', function (e) {
-        console.log("new_readings", e.data);
-        var obj = JSON.parse(e.data);
-        document.getElementById("t" + obj.id).innerHTML = obj.temperature.toFixed(1);
-        document.getElementById("h" + obj.id).innerHTML = obj.humidity;
-        document.getElementById("rt" + obj.id).innerHTML = obj.readingId;
-        document.getElementById("rh" + obj.id).innerHTML = obj.readingId;
+    source.addEventListener('b2new_readings', function (e) {
+        console.log("board2_new_readings", e.data);
+        var obj2 = JSON.parse(e.data);
+        document.getElementById("t" + obj2.id).innerHTML = obj2.temperature.toFixed(1);
+        document.getElementById("h" + obj2.id).innerHTML = obj2.humidity;
+        document.getElementById("r" + obj2.id).innerHTML = obj2.readingId;
+    }, false);
+
+    source.addEventListener('b3new_reading', function (e) {
+        console.log("board3_new_reading", e.data);
+        var obj3 = JSON.parse(e.data);
+        document.getElementById("t" + obj3.id).innerHTML = obj3.temperature.toFixed(2);
+        document.getElementById("r" + obj3.id).innerHTML = obj3.readingId;
     }, false);
 
     source.addEventListener('new_device_state', function (e) {
