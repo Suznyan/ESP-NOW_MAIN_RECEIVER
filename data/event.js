@@ -20,6 +20,7 @@ if (!!window.EventSource) {
         document.getElementById("t" + obj2.id).innerHTML = obj2.temperature.toFixed(1);
         document.getElementById("h" + obj2.id).innerHTML = obj2.humidity;
         document.getElementById("r" + obj2.id).innerHTML = obj2.readingId;
+        document.getElementById("state" + obj2.id).innerHTML = obj2.state;
     }, false);
 
     source.addEventListener('b3new_reading', function (e) {
@@ -27,6 +28,7 @@ if (!!window.EventSource) {
         var obj3 = JSON.parse(e.data);
         document.getElementById("t" + obj3.id).innerHTML = obj3.temperature.toFixed(2);
         document.getElementById("r" + obj3.id).innerHTML = obj3.readingId;
+        document.getElementById("state" + obj3.id).innerHTML = obj3.state;
     }, false);
 
     source.addEventListener('new_device_state', function (e) {

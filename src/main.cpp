@@ -220,6 +220,7 @@ void OnDataRecv(const uint8_t *mac_addr, const uint8_t *incomingData, int len) {
         board2["temperature"] = (float)Board2_Data.temp / 100;
         board2["humidity"] = Board2_Data.hum;
         board2["readingId"] = String(Board2_Data.readingId);
+        board2["state"] = Board2_Data.status ? "ON" : "OFF";
         String jsonString2 = JSON.stringify(board2);
         events.send(jsonString2.c_str(), "b2new_readings", millis());
     }
@@ -488,22 +489,30 @@ void registerPeers() {
 }
 
 void Channeling_Monitor() {
-    while (!Slave_1_On_Correct_Channel || !Slave_2_On_Correct_Channel ||
-           !Slave_3_On_Correct_Channel || !Slave_4_On_Correct_Channel) {
+    while (
+            // !Slave_1_On_Correct_Channel || 
+            !Slave_2_On_Correct_Channel || 
+            !Slave_3_On_Correct_Channel 
+            // ||!Slave_4_On_Correct_Channel
+                 ) {
         Serial.println("!!Fixing connection!!");
         // WiFi.printDiag(Serial);
         if (isServerInit) {
-            if (Slave_1_On_Correct_Channel) Broadcast_Channel_To(1, CHANNEL);
+            // if (Slave_1_On_Correct_Channel) Broadcast_Channel_To(1, CHANNEL);
             if (Slave_2_On_Correct_Channel) Broadcast_Channel_To(2, CHANNEL);
-            // if(Slave_3_On_Correct_Channel){Broadcast_Channel_To(3, CHANNEL);}
-            // if(Slave_4_On_Correct_Channel){Broadcast_Channel_To(4, CHANNEL);}
+            // if (Slave_3_On_Correct_Channel) Broadcast_Channel_To(3, CHANNEL);
+            // if (Slave_4_On_Correct_Channel) Broadcast_Channel_To(4, CHANNEL);
 
             WiFi.disconnect();
             esp_wifi_set_promiscuous(true);
             esp_wifi_set_channel(1, WIFI_SECOND_CHAN_NONE);
             esp_wifi_set_promiscuous(false);
-            Broadcast_Channel_To(1, getWiFiChannel((wm.getWiFiSSID()).c_str()));
+            // Broadcast_Channel_To(1,
+            // getWiFiChannel((wm.getWiFiSSID()).c_str()));
             Broadcast_Channel_To(2, getWiFiChannel((wm.getWiFiSSID()).c_str()));
+            // Broadcast_Channel_To(3, getWiFiChannel((wm.getWiFiSSID()).c_str()));
+            // Broadcast_Channel_To(4,
+            // getWiFiChannel((wm.getWiFiSSID()).c_str()));
         } else {
             esp_wifi_set_promiscuous(true);
             esp_wifi_set_channel(1, WIFI_SECOND_CHAN_NONE);
@@ -648,7 +657,7 @@ void setup() {
         // }
         // Broadcast_Channel_To(1, getWiFiChannel((wm.getWiFiSSID()).c_str()));
         Broadcast_Channel_To(2, getWiFiChannel((wm.getWiFiSSID()).c_str()));
-        Broadcast_Channel_To(3, getWiFiChannel((wm.getWiFiSSID()).c_str()));
+        // Broadcast_Channel_To(3, getWiFiChannel((wm.getWiFiSSID()).c_str()));
     }
 
     initWiFiManager();
@@ -691,7 +700,7 @@ void loop() {
         // SendTo(1);
         // delay(1000);
         SendTo(2);
-        SendTo(3);
-        delay(1000);
+        // SendTo(3);
+        // delay(1000);
     }
 }
