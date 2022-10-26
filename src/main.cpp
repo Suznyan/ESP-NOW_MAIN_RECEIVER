@@ -74,6 +74,7 @@ JSONVar board4;
 
 AsyncWebServer server(80);
 AsyncEventSource events("/events");
+AsyncWebSocket ws("/ws");
 
 esp_now_peer_info_t slave;
 
@@ -303,7 +304,58 @@ void SendTo(int board) {
     }
 }
 
+void handleWebSocketMessage(void *arg, uint8_t *data, size_t len) {
+    AwsFrameInfo *info = (AwsFrameInfo *)arg;
+    if (info->final && info->index == 0 && info->len == len &&
+        info->opcode == WS_TEXT) {
+        data[len] = 0;
+        if (strcmp((char *)data, "toggle1") == 0) {
+            Board1_Data.id = 1;
+            Board1_Data.status = digitalRead(Board_1_State) ? false : true;
+            SendTo(1);
+        } else if ((strcmp((char *)data, "toggle2") == 0)) {
+            Board2_Data.id = 2;
+            Board2_Data.status = digitalRead(Board_2_State) ? false : true;
+            SendTo(2);
+        } else if ((strcmp((char *)data, "toggle3") == 0)) {
+            Board3_Data.id = 3;
+            Board3_Data.status = digitalRead(Board_3_State) ? false : true;
+            SendTo(3);
+        } else if ((strcmp((char *)data, "toggle4") == 0)) {
+            Board4_Data.id = 4;
+            Board4_Data.status = digitalRead(Board_4_State) ? false : true;
+            SendTo(4);
+        }
+    }
+}
+
+void onEvent(AsyncWebSocket *server, AsyncWebSocketClient *client,
+             AwsEventType type, void *arg, uint8_t *data, size_t len) {
+    switch (type) {
+        case WS_EVT_CONNECT:
+            Serial.printf("WebSocket client #%u connected from %s\n",
+                          client->id(), client->remoteIP().toString().c_str());
+            break;
+        case WS_EVT_DISCONNECT:
+            Serial.printf("WebSocket client #%u disconnected\n", client->id());
+            break;
+        case WS_EVT_DATA:
+            handleWebSocketMessage(arg, data, len);
+            break;
+        case WS_EVT_PONG:
+        case WS_EVT_ERROR:
+            break;
+    }
+}
+
+void initWebSocket() {
+    ws.onEvent(onEvent);
+    server.addHandler(&ws);
+}
+
 void initServer() {
+    initWebSocket();
+
     // Route for root / web page
     server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
         request->send(SPIFFS, "/index.html", String(), false);
@@ -317,67 +369,6 @@ void initServer() {
     // Route to load javasript file
     server.on("/event.js", HTTP_GET, [](AsyncWebServerRequest *request) {
         request->send(SPIFFS, "/event.js", "text/javascript");
-    });
-
-    // Route to set GPIO to HIGH
-    server.on("/1/on", HTTP_GET, [](AsyncWebServerRequest *request) {
-        Board1_Data.id = 1;
-        Board1_Data.status = true;
-        SendTo(1);
-        request->send(SPIFFS, "/index.html", String());
-    });
-
-    // Route to set GPIO to LOW
-    server.on("/1/off", HTTP_GET, [](AsyncWebServerRequest *request) {
-        Board1_Data.id = 1;
-        Board1_Data.status = false;
-        SendTo(1);
-        request->send(SPIFFS, "/index.html", String());
-    });
-
-    server.on("/2/on", HTTP_GET, [](AsyncWebServerRequest *request) {
-        Board2_Data.id = 2;
-        Board2_Data.status = true;
-        SendTo(2);
-        request->send(SPIFFS, "/index.html", String());
-    });
-
-    // Route to set GPIO to LOW
-    server.on("/2/off", HTTP_GET, [](AsyncWebServerRequest *request) {
-        Board2_Data.id = 2;
-        Board2_Data.status = false;
-        SendTo(2);
-        request->send(SPIFFS, "/index.html", String());
-    });
-
-    server.on("/3/on", HTTP_GET, [](AsyncWebServerRequest *request) {
-        Board3_Data.id = 3;
-        Board3_Data.status = true;
-        SendTo(3);
-        request->send(SPIFFS, "/index.html", String());
-    });
-
-    // Route to set GPIO to LOW
-    server.on("/3/off", HTTP_GET, [](AsyncWebServerRequest *request) {
-        Board3_Data.id = 3;
-        Board3_Data.status = false;
-        SendTo(3);
-        request->send(SPIFFS, "/index.html", String());
-    });
-
-    server.on("/4/on", HTTP_GET, [](AsyncWebServerRequest *request) {
-        Board4_Data.id = 4;
-        Board4_Data.status = true;
-        SendTo(4);
-        request->send(SPIFFS, "/index.html", String());
-    });
-
-    // Route to set GPIO to LOW
-    server.on("/4/off", HTTP_GET, [](AsyncWebServerRequest *request) {
-        Board4_Data.id = 4;
-        Board4_Data.status = false;
-        SendTo(4);
-        request->send(SPIFFS, "/index.html", String());
     });
 
     events.onConnect([](AsyncEventSourceClient *client) {
@@ -397,10 +388,6 @@ void initServer() {
 }
 
 void Broadcast_Channel_To(byte Board_Index, byte channel) {
-    // channel = getWiFiChannel((wm.getWiFiSSID()).c_str());
-    // clean up ram
-    WiFi.scanDelete();
-    // Serial.printf("channel: %d\n", channel);
     switch (Board_Index) {
         case 1:
             Board1_Data.id = 0;
@@ -490,29 +477,31 @@ void registerPeers() {
 
 void Channeling_Monitor() {
     while (
-            // !Slave_1_On_Correct_Channel || 
-            !Slave_2_On_Correct_Channel || 
-            !Slave_3_On_Correct_Channel 
-            // ||!Slave_4_On_Correct_Channel
-                 ) {
+        // !Slave_1_On_Correct_Channel ||
+        !Slave_2_On_Correct_Channel || !Slave_3_On_Correct_Channel
+        // ||!Slave_4_On_Correct_Channel
+    ) {
         Serial.println("!!Fixing connection!!");
         // WiFi.printDiag(Serial);
         if (isServerInit) {
-            // if (Slave_1_On_Correct_Channel) Broadcast_Channel_To(1, CHANNEL);
+            // if (Slave_1_On_Correct_Channel) Broadcast_Channel_To(1,
+            // CHANNEL);
             if (Slave_2_On_Correct_Channel) Broadcast_Channel_To(2, CHANNEL);
-            // if (Slave_3_On_Correct_Channel) Broadcast_Channel_To(3, CHANNEL);
+            if (Slave_3_On_Correct_Channel) Broadcast_Channel_To(3, CHANNEL);
             // if (Slave_4_On_Correct_Channel) Broadcast_Channel_To(4, CHANNEL);
 
             WiFi.disconnect();
             esp_wifi_set_promiscuous(true);
             esp_wifi_set_channel(1, WIFI_SECOND_CHAN_NONE);
             esp_wifi_set_promiscuous(false);
-            // Broadcast_Channel_To(1,
-            // getWiFiChannel((wm.getWiFiSSID()).c_str()));
-            Broadcast_Channel_To(2, getWiFiChannel((wm.getWiFiSSID()).c_str()));
-            // Broadcast_Channel_To(3, getWiFiChannel((wm.getWiFiSSID()).c_str()));
-            // Broadcast_Channel_To(4,
-            // getWiFiChannel((wm.getWiFiSSID()).c_str()));
+
+            byte tmp_chan = getWiFiChannel((wm.getWiFiSSID()).c_str());
+            // clean up ram after doing wifi channel scan
+            WiFi.scanDelete();
+            // Broadcast_Channel_To(1, tmp_chan);
+            Broadcast_Channel_To(2, tmp_chan);
+            Broadcast_Channel_To(3, tmp_chan);
+            // Broadcast_Channel_To(4, tmp_chan);            
         } else {
             esp_wifi_set_promiscuous(true);
             esp_wifi_set_channel(1, WIFI_SECOND_CHAN_NONE);
@@ -652,18 +641,25 @@ void setup() {
         esp_wifi_set_promiscuous(true);
         esp_wifi_set_channel(1, WIFI_SECOND_CHAN_NONE);
         esp_wifi_set_promiscuous(false);
+
+        byte tmp_chan = getWiFiChannel((wm.getWiFiSSID()).c_str());
+        // clean up ram after doing wifi channel scan
+        WiFi.scanDelete();
         // for (int i = 1; i < 5; i++) {
-        //     Broadcast_Channel_To(i);
+        //     Broadcast_Channel_To(i, tmp_chan);
         // }
-        // Broadcast_Channel_To(1, getWiFiChannel((wm.getWiFiSSID()).c_str()));
-        Broadcast_Channel_To(2, getWiFiChannel((wm.getWiFiSSID()).c_str()));
-        // Broadcast_Channel_To(3, getWiFiChannel((wm.getWiFiSSID()).c_str()));
+        // Broadcast_Channel_To(1, tmp_chan);
+        Broadcast_Channel_To(2, tmp_chan);
+        Broadcast_Channel_To(3, tmp_chan);
+        // Broadcast_Channel_To(4, tmp_chan);
     }
 
     initWiFiManager();
 }
 
 void loop() {
+    ws.cleanupClients();
+
     while (WiFi.status() != WL_CONNECTED && isServerInit == true &&
            Slave_1_On_Correct_Channel == true &&
            Slave_2_On_Correct_Channel == true &&
@@ -700,7 +696,8 @@ void loop() {
         // SendTo(1);
         // delay(1000);
         SendTo(2);
-        // SendTo(3);
+        delay(500);
+        SendTo(3);
         // delay(1000);
     }
 }

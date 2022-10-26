@@ -37,3 +37,62 @@ if (!!window.EventSource) {
         document.getElementById("state" + obj1.id).innerHTML = obj1.state;
     }, false);
 }
+
+var gateway = `ws://${window.location.hostname}/ws`;
+var websocket;
+function initWebSocket() {
+    console.log('Trying to open a WebSocket connection...');
+    websocket = new WebSocket(gateway);
+    websocket.onopen = onOpen;
+    websocket.onclose = onClose;
+    // websocket.onmessage = onMessage; // <-- add this line
+}
+function onOpen(event) {
+    console.log('Connection opened');
+}
+
+function onClose(event) {
+    console.log('Connection closed');
+    setTimeout(initWebSocket, 2000);
+}
+
+// function onMessage(event) {
+//     var state;
+//     if (event.data == "1") {
+//         state = "ON";
+//     }
+//     else {
+//         state = "OFF";
+//     }
+//     document.getElementById('state').innerHTML = state;
+// }
+
+window.addEventListener('load', onLoad);
+
+function onLoad(event) {
+    initWebSocket();
+    initButton();
+}
+
+function initButton() {
+    document.getElementById('button1').addEventListener('click', toggle1);
+    document.getElementById('button2').addEventListener('click', toggle2);
+    document.getElementById('button3').addEventListener('click', toggle3);
+    document.getElementById('button4').addEventListener('click', toggle4);
+}
+
+function toggle1() {
+    websocket.send('toggle1');
+}
+
+function toggle2() {
+    websocket.send('toggle2');
+}
+
+function toggle3() {
+    websocket.send('toggle3');
+}
+
+function toggle4() {
+    websocket.send('toggle4');
+}
