@@ -9,7 +9,7 @@
 
 #include "ESPAsyncWebServer.h"
 
-#define CHANNEL 1
+#define DEFAULT_CHANNEL 1
 
 #define WIFI_TRIGGER 13
 
@@ -25,22 +25,24 @@ const long interval = 240000;
 #define RESET_PIN -1
 //---------------------------
 
+#define FAILED_LIMIT 10
+
 //---------------------------
 // Board 1 indicator
-#define Board_1_State 23
-#define Board_1_Switch 26
+#define Board_1_State 32
+#define Board_1_Switch 17
 
 // Board 2 indicator
-#define Board_2_State 32
-#define Board_2_Switch 27
+#define Board_2_State 33
+#define Board_2_Switch 5
 
 // Board 3 indicator
-#define Board_3_State 33
-#define Board_3_Switch 14
+#define Board_3_State 25
+#define Board_3_Switch 18
 
 // Board 4 indicator
-#define Board_4_State 25
-#define Board_4_Switch 12
+#define Board_4_State 26
+#define Board_4_Switch 19
 //---------------------------
 
 uint8_t AllBroadcastAddress[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
@@ -89,6 +91,11 @@ bool Slave_3_On_Correct_Channel = true;
 bool Slave_4_On_Correct_Channel = true;
 bool isServerInit = false;
 
+byte B1_failed_count = 0;
+byte B2_failed_count = 0;
+byte B3_failed_count = 0;
+byte B4_failed_count = 0;
+
 char ip_str[20];
 char str1[20];
 char str2[20];
@@ -101,6 +108,13 @@ typedef struct {
     byte WiFi_Channel;
     bool status;
 } Default_Struct;
+
+typedef struct {
+    byte id : 4;
+    byte WiFi_Channel;
+    bool status;
+    bool Motion_Detected;
+} Board1_Data_Struct;
 
 typedef struct {
     byte id : 4;
@@ -121,7 +135,7 @@ typedef struct {
 
 esp_err_t outcome;
 
-Default_Struct Board1_Data;
+Board1_Data_Struct Board1_Data;
 Board2_Data_Struct Board2_Data;
 Board3_Data_Struct Board3_Data;
 Default_Struct Board4_Data;
@@ -152,23 +166,43 @@ void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
         Serial.println("Raising flag");
         if (strstr(macStr, board_1_address_str)) {
             Slave_1_On_Correct_Channel = false;
+            B1_failed_count++;
+            if(B1_failed_count >= FAILED_LIMIT){
+                Slave_1_On_Correct_Channel = true;
+            }
         } else if (strstr(macStr, board_2_address_str)) {
             Slave_2_On_Correct_Channel = false;
+            B2_failed_count++;            
+            if(B2_failed_count >= FAILED_LIMIT){
+                Slave_2_On_Correct_Channel = true;
+            }
         } else if (strstr(macStr, board_3_address_str)) {
             Slave_3_On_Correct_Channel = false;
+            B3_failed_count++;            
+            if(B3_failed_count >= FAILED_LIMIT){
+                Slave_3_On_Correct_Channel = true;
+            }
         } else if (strstr(macStr, board_4_address_str)) {
             Slave_4_On_Correct_Channel = false;
+            B4_failed_count++;
+            if(B4_failed_count >= FAILED_LIMIT){
+                Slave_4_On_Correct_Channel = true;
+            }
         }
     } else {
         // If sent successfully remove the flag of said address
         if (strstr(macStr, board_1_address_str)) {
             Slave_1_On_Correct_Channel = true;
+            B1_failed_count = 0;
         } else if (strstr(macStr, board_2_address_str)) {
             Slave_2_On_Correct_Channel = true;
+            B2_failed_count = 0;
         } else if (strstr(macStr, board_3_address_str)) {
             Slave_3_On_Correct_Channel = true;
+            B3_failed_count = 0;
         } else if (strstr(macStr, board_4_address_str)) {
             Slave_4_On_Correct_Channel = true;
+            B4_failed_count = 0;
         }
     }
 }
@@ -184,6 +218,8 @@ void OnDataRecv(const uint8_t *mac_addr, const uint8_t *incomingData, int len) {
 
     if (strstr(macStr, board_1_address_str)) {
         Slave_1_On_Correct_Channel = true;
+        B1_failed_count = 0;
+
         memcpy(&Board1_Data, incomingData, sizeof(Board1_Data));
         snprintf(str1, 20, "1.%s|", Board1_Data.status ? "ON" : "OFF");
         Serial.printf("Board ID %u: %u bytes\n", Board1_Data.id, len);
@@ -203,6 +239,8 @@ void OnDataRecv(const uint8_t *mac_addr, const uint8_t *incomingData, int len) {
 
     if (strstr(macStr, board_2_address_str)) {
         Slave_2_On_Correct_Channel = true;
+        B2_failed_count = 0;
+
         memcpy(&Board2_Data, incomingData, sizeof(Board2_Data));
         snprintf(str2, 22, "2.%s|%.1f°C|%d%%",
                  Board2_Data.status ? "ON" : "OFF",
@@ -228,6 +266,8 @@ void OnDataRecv(const uint8_t *mac_addr, const uint8_t *incomingData, int len) {
 
     if (strstr(macStr, board_3_address_str)) {
         Slave_3_On_Correct_Channel = true;
+        B3_failed_count = 0;
+
         memcpy(&Board3_Data, incomingData, sizeof(Board3_Data));
         snprintf(str3, 20, "3.%s|%.2f°C", Board3_Data.status ? "ON" : "OFF",
                  (float)Board3_Data.temp / 100);
@@ -251,6 +291,8 @@ void OnDataRecv(const uint8_t *mac_addr, const uint8_t *incomingData, int len) {
 
     if (strstr(macStr, board_4_address_str)) {
         Slave_4_On_Correct_Channel = true;
+        B4_failed_count = 0;
+
         memcpy(&Board4_Data, incomingData, sizeof(Board4_Data));
         snprintf(str4, 20, "4.%s|", Board4_Data.status ? "ON" : "OFF");
         Serial.printf("Board ID %u: %u bytes\n", Board4_Data.id, len);
@@ -420,7 +462,7 @@ void initWiFiManager() {
     wm.setConfigPortalTimeout(30);
     wm.setConnectTimeout(20);
     // connect after portal save toggle
-    wm.setSaveConnect(false);  // do not connect, only save
+    // wm.setSaveConnect(false);  // do not connect, only save
     portalRunning = true;
 
     // invert theme, dark
@@ -430,22 +472,23 @@ void initWiFiManager() {
         Serial.println("Failed to connect");
         portalRunning = false;
         isServerInit = false;
-        return;
+        // return;
+    } else {  
+        // if you get here you have connected to the WiFi
+        Serial.println("Connected");
+        portalRunning = false;
+
+        // Print local IP address
+        Serial.println("");
+        Serial.print("Station IP Address: ");
+        Serial.println(WiFi.localIP());
+        Serial.print("Wi-Fi Channel: ");
+        Serial.println(WiFi.channel());
+        snprintf(ip_str, 20, "IP: %s", WiFi.localIP().toString().c_str());
+
+        // If connected to WIFI, start server
+        initServer();
     }
-    // if you get here you have connected to the WiFi
-    Serial.println("Connected");
-    portalRunning = false;
-
-    // Print local IP address
-    Serial.println("");
-    Serial.print("Station IP Address: ");
-    Serial.println(WiFi.localIP());
-    Serial.print("Wi-Fi Channel: ");
-    Serial.println(WiFi.channel());
-    snprintf(ip_str, 20, "IP: %s", WiFi.localIP().toString().c_str());
-
-    // If connected to WIFI, start server
-    initServer();
 }
 
 void initEspNow() {
@@ -461,7 +504,7 @@ void initEspNow() {
 }
 
 void registerPeers() {
-    slave.channel = CHANNEL;
+    slave.channel = DEFAULT_CHANNEL;
     slave.encrypt = false;
     memset(&slave, 0, sizeof(slave));
 
@@ -476,43 +519,33 @@ void registerPeers() {
 }
 
 void Channeling_Monitor() {
-    while (
-        // !Slave_1_On_Correct_Channel ||
-        !Slave_2_On_Correct_Channel || !Slave_3_On_Correct_Channel
-        // ||!Slave_4_On_Correct_Channel
-    ) {
+    while (!Slave_1_On_Correct_Channel && B1_failed_count < FAILED_LIMIT ||
+           !Slave_2_On_Correct_Channel && B2_failed_count < FAILED_LIMIT ||
+           !Slave_3_On_Correct_Channel && B3_failed_count < FAILED_LIMIT ||
+           !Slave_4_On_Correct_Channel && B4_failed_count < FAILED_LIMIT) {
         Serial.println("!!Fixing connection!!");
         // WiFi.printDiag(Serial);
         if (isServerInit) {
-            // if (Slave_1_On_Correct_Channel) Broadcast_Channel_To(1,
-            // CHANNEL);
-            if (Slave_2_On_Correct_Channel) Broadcast_Channel_To(2, CHANNEL);
-            if (Slave_3_On_Correct_Channel) Broadcast_Channel_To(3, CHANNEL);
-            // if (Slave_4_On_Correct_Channel) Broadcast_Channel_To(4, CHANNEL);
+            if (Slave_1_On_Correct_Channel)
+                Broadcast_Channel_To(1, DEFAULT_CHANNEL);
+            if (Slave_2_On_Correct_Channel)
+                Broadcast_Channel_To(2, DEFAULT_CHANNEL);
+            if (Slave_3_On_Correct_Channel)
+                Broadcast_Channel_To(3, DEFAULT_CHANNEL);
+            if (Slave_4_On_Correct_Channel)
+                Broadcast_Channel_To(4, DEFAULT_CHANNEL);
 
-            WiFi.disconnect();
-            esp_wifi_set_promiscuous(true);
-            esp_wifi_set_channel(1, WIFI_SECOND_CHAN_NONE);
-            esp_wifi_set_promiscuous(false);
-
-            byte tmp_chan = getWiFiChannel((wm.getWiFiSSID()).c_str());
-            // clean up ram after doing wifi channel scan
-            WiFi.scanDelete();
-            // Broadcast_Channel_To(1, tmp_chan);
-            Broadcast_Channel_To(2, tmp_chan);
-            Broadcast_Channel_To(3, tmp_chan);
-            // Broadcast_Channel_To(4, tmp_chan);            
-        } else {
-            esp_wifi_set_promiscuous(true);
-            esp_wifi_set_channel(1, WIFI_SECOND_CHAN_NONE);
-            esp_wifi_set_promiscuous(false);
-
-            Slave_1_On_Correct_Channel = true;
-            Slave_2_On_Correct_Channel = true;
-            Slave_3_On_Correct_Channel = true;
-            Slave_4_On_Correct_Channel = true;
+            WiFi.disconnect();          
         }
-        delay(3000);
+        esp_wifi_set_promiscuous(true);
+        esp_wifi_set_channel(1, WIFI_SECOND_CHAN_NONE);
+        esp_wifi_set_promiscuous(false); 
+
+        Serial.println("----Test ping----");
+        for (int i = 1; i <= 4; i++) {
+            SendTo(i);
+            delay(500);
+        }
     }
 }
 
@@ -534,7 +567,6 @@ void CheckButton() {
             Serial.println("Stopping Portal");
             initWiFiManager();
         }
-        delay(200);
     }
 }
 
@@ -645,13 +677,9 @@ void setup() {
         byte tmp_chan = getWiFiChannel((wm.getWiFiSSID()).c_str());
         // clean up ram after doing wifi channel scan
         WiFi.scanDelete();
-        // for (int i = 1; i < 5; i++) {
-        //     Broadcast_Channel_To(i, tmp_chan);
-        // }
-        // Broadcast_Channel_To(1, tmp_chan);
-        Broadcast_Channel_To(2, tmp_chan);
-        Broadcast_Channel_To(3, tmp_chan);
-        // Broadcast_Channel_To(4, tmp_chan);
+        for (int i = 1; i <= 4; i++) {
+            Broadcast_Channel_To(i, tmp_chan);
+        }
     }
 
     initWiFiManager();
@@ -659,13 +687,25 @@ void setup() {
 
 void loop() {
     ws.cleanupClients();
-
+    
     while (WiFi.status() != WL_CONNECTED && isServerInit == true &&
            Slave_1_On_Correct_Channel == true &&
            Slave_2_On_Correct_Channel == true &&
            Slave_3_On_Correct_Channel == true &&
            Slave_4_On_Correct_Channel == true) {
         Serial.println("No wifi connection, reconnecting");
+        byte tmp_chan = getWiFiChannel((wm.getWiFiSSID()).c_str());
+        if (B1_failed_count < FAILED_LIMIT)
+            Broadcast_Channel_To(1, tmp_chan);
+        if (B2_failed_count < FAILED_LIMIT)
+            Broadcast_Channel_To(2, tmp_chan);
+        if (B3_failed_count < FAILED_LIMIT)
+            Broadcast_Channel_To(3, tmp_chan);
+        if (B4_failed_count < FAILED_LIMIT)
+           Broadcast_Channel_To(4, tmp_chan);
+
+        // clean up ram after doing wifi channel scan
+        WiFi.scanDelete();
         initWiFiManager();
     }
 
@@ -686,18 +726,12 @@ void loop() {
     unsigned long currentMillis = millis();
     if (currentMillis - previousMillis >= interval) {
         // Save the last time a new reading was published
-        previousMillis = currentMillis;
-        // Set values to send
+        previousMillis = currentMillis;        
+        
         Serial.println("Scheduled ping");
-        // for (int i = 1; i < 5; i++) {
-        //     SendTo(i);
-        //     delay(1000);
-        // }
-        // SendTo(1);
-        // delay(1000);
-        SendTo(2);
-        delay(500);
-        SendTo(3);
-        // delay(1000);
+        for (int i = 1; i <= 4; i++) {
+            SendTo(i);
+            delay(500);
+        }
     }
 }
