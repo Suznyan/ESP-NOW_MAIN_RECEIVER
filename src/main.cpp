@@ -166,31 +166,27 @@ void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
         Serial.println("Raising flag");
         if (strstr(macStr, board_1_address_str)) {
             Slave_1_On_Correct_Channel = false;
-            B1_failed_count++;
             if(B1_failed_count >= FAILED_LIMIT){
                 Slave_1_On_Correct_Channel = true;
-            }
+            }else B1_failed_count++;
         } else if (strstr(macStr, board_2_address_str)) {
-            Slave_2_On_Correct_Channel = false;
-            B2_failed_count++;            
+            Slave_2_On_Correct_Channel = false;                        
             if(B2_failed_count >= FAILED_LIMIT){
                 Slave_2_On_Correct_Channel = true;
-            }
+            }else B2_failed_count++;
         } else if (strstr(macStr, board_3_address_str)) {
-            Slave_3_On_Correct_Channel = false;
-            B3_failed_count++;            
+            Slave_3_On_Correct_Channel = false;                        
             if(B3_failed_count >= FAILED_LIMIT){
                 Slave_3_On_Correct_Channel = true;
-            }
+            }else B3_failed_count++;
         } else if (strstr(macStr, board_4_address_str)) {
-            Slave_4_On_Correct_Channel = false;
-            B4_failed_count++;
+            Slave_4_On_Correct_Channel = false;            
             if(B4_failed_count >= FAILED_LIMIT){
                 Slave_4_On_Correct_Channel = true;
-            }
+            }else B4_failed_count++;
         }
     } else {
-        // If sent successfully remove the flag of said address
+        // If sent successfully remove the flag and reset count of said address
         if (strstr(macStr, board_1_address_str)) {
             Slave_1_On_Correct_Channel = true;
             B1_failed_count = 0;
@@ -693,7 +689,7 @@ void loop() {
            Slave_2_On_Correct_Channel == true &&
            Slave_3_On_Correct_Channel == true &&
            Slave_4_On_Correct_Channel == true) {
-        Serial.println("No wifi connection, reconnecting");
+        Serial.println("No wifi connection, connecting");
         byte tmp_chan = getWiFiChannel((wm.getWiFiSSID()).c_str());
         if (B1_failed_count < FAILED_LIMIT)
             Broadcast_Channel_To(1, tmp_chan);
@@ -729,9 +725,9 @@ void loop() {
         previousMillis = currentMillis;        
         
         Serial.println("Scheduled ping");
-        for (int i = 1; i <= 4; i++) {
-            SendTo(i);
-            delay(500);
-        }
+        if (B1_failed_count < FAILED_LIMIT) SendTo(1);
+        if (B2_failed_count < FAILED_LIMIT) SendTo(2);
+        if (B3_failed_count < FAILED_LIMIT) SendTo(3);
+        if (B4_failed_count < FAILED_LIMIT) SendTo(4);
     }
 }

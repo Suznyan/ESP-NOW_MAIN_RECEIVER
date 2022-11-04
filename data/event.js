@@ -45,7 +45,7 @@ function initWebSocket() {
     websocket = new WebSocket(gateway);
     websocket.onopen = onOpen;
     websocket.onclose = onClose;
-    // websocket.onmessage = onMessage; // <-- add this line
+    websocket.onmessage = onMessage;
 }
 function onOpen(event) {
     console.log('Connection opened');
@@ -56,16 +56,16 @@ function onClose(event) {
     setTimeout(initWebSocket, 2000);
 }
 
-// function onMessage(event) {
-//     var state;
-//     if (event.data == "1") {
-//         state = "ON";
-//     }
-//     else {
-//         state = "OFF";
-//     }
-//     document.getElementById('state').innerHTML = state;
-// }
+function onMessage(event) {
+    // var state;
+    // if (event.data == "1") {
+    //     state = "ON";
+    // }
+    // else {
+    //     state = "OFF";
+    // }
+    // document.getElementById('state').innerHTML = state;
+}
 
 window.addEventListener('load', onLoad);
 
@@ -75,24 +75,8 @@ function onLoad(event) {
 }
 
 function initButton() {
-    document.getElementById('button1').addEventListener('click', toggle1);
-    document.getElementById('button2').addEventListener('click', toggle2);
-    document.getElementById('button3').addEventListener('click', toggle3);
-    document.getElementById('button4').addEventListener('click', toggle4);
-}
-
-function toggle1() {
-    websocket.send('toggle1');
-}
-
-function toggle2() {
-    websocket.send('toggle2');
-}
-
-function toggle3() {
-    websocket.send('toggle3');
-}
-
-function toggle4() {
-    websocket.send('toggle4');
+    document.getElementById('button1').addEventListener('click', websocket.send('toggle1'));
+    document.getElementById('button2').addEventListener('click', websocket.send('toggle2'));
+    document.getElementById('button3').addEventListener('click', websocket.send('toggle3'));
+    document.getElementById('button4').addEventListener('click', websocket.send('toggle4'));
 }
