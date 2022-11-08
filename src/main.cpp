@@ -10,8 +10,24 @@
 #include "ESPAsyncWebServer.h"
 
 #define DEFAULT_CHANNEL 1
-
 #define WIFI_TRIGGER 13
+#define DEBOUNCETIME 150
+
+volatile int numberOfButtonInterrupts_1 = 0;
+volatile bool lastState1;
+volatile uint32_t debounceTimeout1 = 0;
+
+volatile int numberOfButtonInterrupts_2 = 0;
+volatile bool lastState2;
+volatile uint32_t debounceTimeout2 = 0;
+
+volatile int numberOfButtonInterrupts_3 = 0;
+volatile bool lastState3;
+volatile uint32_t debounceTimeout3 = 0;
+
+volatile int numberOfButtonInterrupts_4 = 0;
+volatile bool lastState4;
+volatile uint32_t debounceTimeout4 = 0;
 
 // Stores last time scheduled ping was executed
 unsigned long previousMillis = 0;
@@ -25,7 +41,7 @@ const long interval = 240000;
 #define RESET_PIN -1
 //---------------------------
 
-#define FAILED_LIMIT 10
+#define FAILED_LIMIT 5
 
 //---------------------------
 // Board 1 indicator
@@ -140,6 +156,11 @@ Board2_Data_Struct Board2_Data;
 Board3_Data_Struct Board3_Data;
 Default_Struct Board4_Data;
 
+portMUX_TYPE mux1 = portMUX_INITIALIZER_UNLOCKED;
+portMUX_TYPE mux2 = portMUX_INITIALIZER_UNLOCKED;
+portMUX_TYPE mux3 = portMUX_INITIALIZER_UNLOCKED;
+portMUX_TYPE mux4 = portMUX_INITIALIZER_UNLOCKED;
+
 int32_t getWiFiChannel(const char *ssid) {
     if (int32_t n = WiFi.scanNetworks()) {
         for (uint8_t i = 0; i < n; i++) {
@@ -166,24 +187,28 @@ void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
         Serial.println("Raising flag");
         if (strstr(macStr, board_1_address_str)) {
             Slave_1_On_Correct_Channel = false;
-            if(B1_failed_count >= FAILED_LIMIT){
+            if (B1_failed_count >= FAILED_LIMIT) {
                 Slave_1_On_Correct_Channel = true;
-            }else B1_failed_count++;
+            } else
+                B1_failed_count++;
         } else if (strstr(macStr, board_2_address_str)) {
-            Slave_2_On_Correct_Channel = false;                        
-            if(B2_failed_count >= FAILED_LIMIT){
+            Slave_2_On_Correct_Channel = false;
+            if (B2_failed_count >= FAILED_LIMIT) {
                 Slave_2_On_Correct_Channel = true;
-            }else B2_failed_count++;
+            } else
+                B2_failed_count++;
         } else if (strstr(macStr, board_3_address_str)) {
-            Slave_3_On_Correct_Channel = false;                        
-            if(B3_failed_count >= FAILED_LIMIT){
+            Slave_3_On_Correct_Channel = false;
+            if (B3_failed_count >= FAILED_LIMIT) {
                 Slave_3_On_Correct_Channel = true;
-            }else B3_failed_count++;
+            } else
+                B3_failed_count++;
         } else if (strstr(macStr, board_4_address_str)) {
-            Slave_4_On_Correct_Channel = false;            
-            if(B4_failed_count >= FAILED_LIMIT){
+            Slave_4_On_Correct_Channel = false;
+            if (B4_failed_count >= FAILED_LIMIT) {
                 Slave_4_On_Correct_Channel = true;
-            }else B4_failed_count++;
+            } else
+                B4_failed_count++;
         }
     } else {
         // If sent successfully remove the flag and reset count of said address
@@ -306,15 +331,7 @@ void OnDataRecv(const uint8_t *mac_addr, const uint8_t *incomingData, int len) {
     }
 }
 
-void initDisplay() {
-    display.begin();  // Initialize OLED display
-    display.setPowerSave(0);
-    display.setContrast(1);
-    display.enableUTF8Print();  // enable UTF8 support for the Arduino print()
-    display.setFont(u8g2_font_t0_11_tf);  // choose a suitable font
-}
-
-void SendTo(int board) {
+void SendTo(byte board) {
     board = board - 1;
     switch (board) {
         case 0:
@@ -469,7 +486,7 @@ void initWiFiManager() {
         portalRunning = false;
         isServerInit = false;
         // return;
-    } else {  
+    } else {
         // if you get here you have connected to the WiFi
         Serial.println("Connected");
         portalRunning = false;
@@ -514,34 +531,37 @@ void registerPeers() {
     }
 }
 
-void Channeling_Monitor() {
-    while (!Slave_1_On_Correct_Channel && B1_failed_count < FAILED_LIMIT ||
-           !Slave_2_On_Correct_Channel && B2_failed_count < FAILED_LIMIT ||
-           !Slave_3_On_Correct_Channel && B3_failed_count < FAILED_LIMIT ||
-           !Slave_4_On_Correct_Channel && B4_failed_count < FAILED_LIMIT) {
-        Serial.println("!!Fixing connection!!");
-        // WiFi.printDiag(Serial);
-        if (isServerInit) {
-            if (Slave_1_On_Correct_Channel)
-                Broadcast_Channel_To(1, DEFAULT_CHANNEL);
-            if (Slave_2_On_Correct_Channel)
-                Broadcast_Channel_To(2, DEFAULT_CHANNEL);
-            if (Slave_3_On_Correct_Channel)
-                Broadcast_Channel_To(3, DEFAULT_CHANNEL);
-            if (Slave_4_On_Correct_Channel)
-                Broadcast_Channel_To(4, DEFAULT_CHANNEL);
+void ChannelingMonitor(void *parameter) {
+    while (1) {
+        while (!Slave_1_On_Correct_Channel && B1_failed_count < FAILED_LIMIT ||
+               !Slave_2_On_Correct_Channel && B2_failed_count < FAILED_LIMIT ||
+               !Slave_3_On_Correct_Channel && B3_failed_count < FAILED_LIMIT ||
+               !Slave_4_On_Correct_Channel && B4_failed_count < FAILED_LIMIT) {
+            Serial.println("!!Fixing connection!!");
+            // WiFi.printDiag(Serial);
+            if (isServerInit) {
+                if (Slave_1_On_Correct_Channel)
+                    Broadcast_Channel_To(1, DEFAULT_CHANNEL);
+                if (Slave_2_On_Correct_Channel)
+                    Broadcast_Channel_To(2, DEFAULT_CHANNEL);
+                if (Slave_3_On_Correct_Channel)
+                    Broadcast_Channel_To(3, DEFAULT_CHANNEL);
+                if (Slave_4_On_Correct_Channel)
+                    Broadcast_Channel_To(4, DEFAULT_CHANNEL);
 
-            WiFi.disconnect();          
-        }
-        esp_wifi_set_promiscuous(true);
-        esp_wifi_set_channel(1, WIFI_SECOND_CHAN_NONE);
-        esp_wifi_set_promiscuous(false); 
+                WiFi.disconnect();
+            }
+            esp_wifi_set_promiscuous(true);
+            esp_wifi_set_channel(1, WIFI_SECOND_CHAN_NONE);
+            esp_wifi_set_promiscuous(false);
 
-        Serial.println("----Test ping----");
-        for (int i = 1; i <= 4; i++) {
-            SendTo(i);
-            delay(500);
+            Serial.println("----Test ping----");
+            for (int i = 1; i <= 4; i++) {
+                SendTo(i);
+                delay(500);
+            }
         }
+        vTaskDelay(100 / portTICK_PERIOD_MS);
     }
 }
 
@@ -566,74 +586,221 @@ void CheckButton() {
     }
 }
 
-void IndicatorLED() {
-    digitalWrite(Board_1_State, Board_1_Last_Received_State);
-    digitalWrite(Board_2_State, Board_2_Last_Received_State);
-    digitalWrite(Board_3_State, Board_3_Last_Received_State);
-    digitalWrite(Board_4_State, Board_4_Last_Received_State);
-}
+void displayingTask(void *parameter) {
+    pinMode(Board_1_State, OUTPUT);
+    pinMode(Board_2_State, OUTPUT);
+    pinMode(Board_3_State, OUTPUT);
+    pinMode(Board_4_State, OUTPUT);
 
-void DisplayUpdate() {
-    display.clearBuffer();
-    display.setCursor(0, 10);
-    display.print(ip_str);
-    display.setCursor(0, 25);
-    display.print(str1);
-    display.setCursor(0, 35);
-    display.print(str2);
-    display.setCursor(0, 45);
-    display.print(str3);
-    display.setCursor(0, 55);
-    display.print(str4);
-    display.sendBuffer();
-}
+    display.begin();  // Initialize OLED display
+    display.setPowerSave(0);
+    display.setContrast(1);
+    display.enableUTF8Print();  // enable UTF8 support for the Arduino print()
+    display.setFont(u8g2_font_t0_11_tf);  // choose a suitable font
 
-void Button1_interrupt_handler() {
-    static unsigned long last_interrupt_time = 0;
-    unsigned long interrupt_time = millis();
-    // if interrupt come fast than 200ms, assume it's a bounce and ignore
-    if (interrupt_time - last_interrupt_time > 400) {
-        Board1_Data.id = 1;
-        Board1_Data.status = Board_1_Last_Received_State ? false : true;
-        SendTo(1);
+    while (1) {
+        digitalWrite(Board_1_State, Board_1_Last_Received_State);
+        digitalWrite(Board_2_State, Board_2_Last_Received_State);
+        digitalWrite(Board_3_State, Board_3_Last_Received_State);
+        digitalWrite(Board_4_State, Board_4_Last_Received_State);
+
+        display.clearBuffer();
+        display.setCursor(0, 10);
+        display.print(ip_str);
+        display.setCursor(0, 25);
+        display.print(str1);
+        display.setCursor(0, 35);
+        display.print(str2);
+        display.setCursor(0, 45);
+        display.print(str3);
+        display.setCursor(0, 55);
+        display.print(str4);
+        display.sendBuffer();
+
+        vTaskDelay(100 / portTICK_PERIOD_MS);
     }
-    last_interrupt_time = interrupt_time;
 }
 
-void Button2_interrupt_handler() {
-    static unsigned long last_interrupt_time = 0;
-    unsigned long interrupt_time = millis();
-    // if interrupt come fast than 200ms, assume it's a bounce and ignore
-    if (interrupt_time - last_interrupt_time > 400) {
-        Board2_Data.id = 2;
-        Board2_Data.status = Board_2_Last_Received_State ? false : true;
-        SendTo(2);
-    }
-    last_interrupt_time = interrupt_time;
+void IRAM_ATTR Button1_interrupt_handler() {
+    portENTER_CRITICAL_ISR(&mux1);
+    numberOfButtonInterrupts_1++;
+    lastState1 = digitalRead(Board_1_Switch);
+    debounceTimeout1 = xTaskGetTickCount();
+    portEXIT_CRITICAL_ISR(&mux1);
 }
 
-void Button3_interrupt_handler() {
-    static unsigned long last_interrupt_time = 0;
-    unsigned long interrupt_time = millis();
-    // if interrupt come fast than 200ms, assume it's a bounce and ignore
-    if (interrupt_time - last_interrupt_time > 400) {
-        Board3_Data.id = 3;
-        Board3_Data.status = Board_3_Last_Received_State ? false : true;
-        SendTo(3);
-    }
-    last_interrupt_time = interrupt_time;
+void IRAM_ATTR Button2_interrupt_handler() {
+    portENTER_CRITICAL_ISR(&mux2);
+    numberOfButtonInterrupts_2++;
+    lastState2 = digitalRead(Board_2_Switch);
+    debounceTimeout2 = xTaskGetTickCount();
+    portEXIT_CRITICAL_ISR(&mux2);
 }
 
-void Button4_interrupt_handler() {
-    static unsigned long last_interrupt_time = 0;
-    unsigned long interrupt_time = millis();
-    // if interrupt come fast than 200ms, assume it's a bounce and ignore
-    if (interrupt_time - last_interrupt_time > 400) {
-        Board4_Data.id = 4;
-        Board4_Data.status = Board_4_Last_Received_State ? false : true;
-        SendTo(4);
+void IRAM_ATTR Button3_interrupt_handler() {
+    portENTER_CRITICAL_ISR(&mux3);
+    numberOfButtonInterrupts_3++;
+    lastState3 = digitalRead(Board_3_Switch);
+    debounceTimeout3 = xTaskGetTickCount();
+    portEXIT_CRITICAL_ISR(&mux3);
+}
+
+void IRAM_ATTR Button4_interrupt_handler() {
+    portENTER_CRITICAL_ISR(&mux4);
+    numberOfButtonInterrupts_4++;
+    lastState4 = digitalRead(Board_4_Switch);
+    debounceTimeout4 = xTaskGetTickCount();
+    portEXIT_CRITICAL_ISR(&mux4);
+}
+
+void taskButtonsRead(void *parameter) {
+    String taskMessage = "Debounced ButtonRead Task running on core ";
+    taskMessage = taskMessage + xPortGetCoreID();
+    Serial.println(taskMessage);
+
+    // set up button Pin
+    pinMode(Board_1_Switch, INPUT_PULLUP);
+    attachInterrupt(digitalPinToInterrupt(Board_1_Switch),
+                    Button1_interrupt_handler, FALLING);
+
+    pinMode(Board_2_Switch, INPUT_PULLUP);
+    attachInterrupt(digitalPinToInterrupt(Board_2_Switch),
+                    Button2_interrupt_handler, FALLING);
+
+    pinMode(Board_3_Switch, INPUT_PULLUP);
+    attachInterrupt(digitalPinToInterrupt(Board_3_Switch),
+                    Button3_interrupt_handler, FALLING);
+
+    pinMode(Board_4_Switch, INPUT_PULLUP);
+    attachInterrupt(digitalPinToInterrupt(Board_4_Switch),
+                    Button4_interrupt_handler, FALLING);
+
+    uint32_t saveDebounceTimeout1;
+    uint32_t saveDebounceTimeout2;
+    uint32_t saveDebounceTimeout3;
+    uint32_t saveDebounceTimeout4;
+    bool saveLastState1;
+    bool saveLastState2;
+    bool saveLastState3;
+    bool saveLastState4;
+    int save1;
+    int save2;
+    int save3;
+    int save4;
+
+    // Enter RTOS Task Loop
+    while (1) {
+        portENTER_CRITICAL_ISR(&mux1);
+        save1 = numberOfButtonInterrupts_1;
+        saveDebounceTimeout1 = debounceTimeout1;
+        saveLastState1 = lastState1;
+        portEXIT_CRITICAL_ISR(&mux1);
+
+        portENTER_CRITICAL_ISR(&mux2);
+        save2 = numberOfButtonInterrupts_2;
+        saveDebounceTimeout2 = debounceTimeout2;
+        saveLastState2 = lastState2;
+        portEXIT_CRITICAL_ISR(&mux2);
+
+        portENTER_CRITICAL_ISR(&mux3);
+        save3 = numberOfButtonInterrupts_3;
+        saveDebounceTimeout3 = debounceTimeout3;
+        saveLastState3 = lastState3;
+        portEXIT_CRITICAL_ISR(&mux3);
+
+        portENTER_CRITICAL_ISR(&mux4);
+        save4 = numberOfButtonInterrupts_4;
+        saveDebounceTimeout4 = debounceTimeout4;
+        saveLastState4 = lastState4;
+        portEXIT_CRITICAL_ISR(&mux4);
+
+        bool currentState1 = digitalRead(Board_1_Switch);
+        bool currentState2 = digitalRead(Board_2_Switch);
+        bool currentState3 = digitalRead(Board_3_Switch);
+        bool currentState4 = digitalRead(Board_4_Switch);
+
+        if ((save1 != 0)                          // interrupt has triggered
+            && (currentState1 == saveLastState1)  // pin is still in the same
+            // state as when intr triggered
+            && (millis() - saveDebounceTimeout1 >
+                DEBOUNCETIME)) {  // and it has been low for at least
+                                  // DEBOUNCETIME, then valid keypress
+            if (currentState1 == LOW) {
+                Board1_Data.id = 1;
+                Board1_Data.status = Board_1_Last_Received_State ? false : true;
+                SendTo(1);
+            }
+            portENTER_CRITICAL_ISR(
+                &mux1);  // can't change it unless, atomic - Critical section
+            numberOfButtonInterrupts_1 =
+                0;  // acknowledge keypress and reset interrupt counter
+            portEXIT_CRITICAL_ISR(&mux1);
+
+            vTaskDelay(10 / portTICK_PERIOD_MS);
+        }
+
+        if ((save2 != 0)                          // interrupt has triggered
+            && (currentState2 == saveLastState2)  // pin is still in the same
+            // state as when intr triggered
+            && (millis() - saveDebounceTimeout2 >
+                DEBOUNCETIME)) {  // and it has been low for at least
+                                  // DEBOUNCETIME, then valid keypress
+            if (currentState2 == LOW) {
+                Board2_Data.id = 2;
+                Board2_Data.status = Board_2_Last_Received_State ? false : true;
+                SendTo(2);
+            }
+            portENTER_CRITICAL_ISR(
+                &mux2);  // can't change it unless, atomic - Critical section
+            numberOfButtonInterrupts_2 =
+                0;  // acknowledge keypress and reset interrupt counter
+            portEXIT_CRITICAL_ISR(&mux2);
+
+            vTaskDelay(10 / portTICK_PERIOD_MS);
+        }
+
+        if ((save3 != 0)                          // interrupt has triggered
+            && (currentState3 == saveLastState3)  // pin is still in the same
+            // state as when intr triggered
+            && (millis() - saveDebounceTimeout3 >
+                DEBOUNCETIME)) {  // and it has been low for at least
+                                  // DEBOUNCETIME, then valid keypress
+            if (currentState3 == LOW) {
+                Board3_Data.id = 3;
+                Board3_Data.status = Board_3_Last_Received_State ? false : true;
+                SendTo(3);
+            }
+            portENTER_CRITICAL_ISR(
+                &mux3);  // can't change it unless, atomic - Critical section
+            numberOfButtonInterrupts_3 =
+                0;  // acknowledge keypress and reset interrupt counter
+            portEXIT_CRITICAL_ISR(&mux3);
+
+            vTaskDelay(10 / portTICK_PERIOD_MS);
+        }
+
+        if ((save4 != 0)                          // interrupt has triggered
+            && (currentState4 == saveLastState4)  // pin is still in the same
+            // state as when intr triggered
+            && (millis() - saveDebounceTimeout4 >
+                DEBOUNCETIME)) {  // and it has been low for at least
+                                  // DEBOUNCETIME, then valid keypress
+            if (currentState4 == LOW) {
+                Board4_Data.id = 4;
+                Board4_Data.status = Board_4_Last_Received_State ? false : true;
+                SendTo(4);
+            }
+            portENTER_CRITICAL_ISR(
+                &mux4);  // can't change it unless, atomic - Critical section
+            numberOfButtonInterrupts_4 =
+                0;  // acknowledge keypress and reset interrupt counter
+            portEXIT_CRITICAL_ISR(&mux4);
+
+            vTaskDelay(10 / portTICK_PERIOD_MS);
+        }
+
+        vTaskDelay(10 / portTICK_PERIOD_MS);
     }
-    last_interrupt_time = interrupt_time;
 }
 
 void setup() {
@@ -644,25 +811,16 @@ void setup() {
 
     // reset settings - wipe credentials for testing
     // wm.resetSettings();
-
-    pinMode(Board_1_Switch, INPUT_PULLUP);
-    pinMode(Board_1_State, OUTPUT);
-    pinMode(Board_2_Switch, INPUT_PULLUP);
-    pinMode(Board_2_State, OUTPUT);
-    pinMode(Board_3_Switch, INPUT_PULLUP);
-    pinMode(Board_3_State, OUTPUT);
-    pinMode(Board_4_Switch, INPUT_PULLUP);
-    pinMode(Board_4_State, OUTPUT);
     pinMode(WIFI_TRIGGER, INPUT_PULLUP);
 
-    attachInterrupt(Board_1_Switch, Button1_interrupt_handler, FALLING);
-    attachInterrupt(Board_2_Switch, Button2_interrupt_handler, FALLING);
-    attachInterrupt(Board_3_Switch, Button3_interrupt_handler, FALLING);
-    attachInterrupt(Board_4_Switch, Button4_interrupt_handler, FALLING);
+    xTaskCreatePinnedToCore(ChannelingMonitor, "FixChannel", 2048, NULL, 3,
+                            NULL, 0);
+    xTaskCreatePinnedToCore(taskButtonsRead, "Buttons", 2048, NULL, 2, NULL, 0);
+    xTaskCreatePinnedToCore(displayingTask, "OLED&LEDs", 2048, NULL, 2, NULL,
+                            1);
 
-    initEspNow();
     initSPIFFS();
-    initDisplay();
+    initEspNow();
     registerPeers();
 
     if (wm.getWiFiIsSaved()) {
@@ -677,13 +835,11 @@ void setup() {
             Broadcast_Channel_To(i, tmp_chan);
         }
     }
-
     initWiFiManager();
 }
 
 void loop() {
     ws.cleanupClients();
-    
     while (WiFi.status() != WL_CONNECTED && isServerInit == true &&
            Slave_1_On_Correct_Channel == true &&
            Slave_2_On_Correct_Channel == true &&
@@ -691,24 +847,15 @@ void loop() {
            Slave_4_On_Correct_Channel == true) {
         Serial.println("No wifi connection, connecting");
         byte tmp_chan = getWiFiChannel((wm.getWiFiSSID()).c_str());
-        if (B1_failed_count < FAILED_LIMIT)
-            Broadcast_Channel_To(1, tmp_chan);
-        if (B2_failed_count < FAILED_LIMIT)
-            Broadcast_Channel_To(2, tmp_chan);
-        if (B3_failed_count < FAILED_LIMIT)
-            Broadcast_Channel_To(3, tmp_chan);
-        if (B4_failed_count < FAILED_LIMIT)
-           Broadcast_Channel_To(4, tmp_chan);
+        if (B1_failed_count < FAILED_LIMIT) Broadcast_Channel_To(1, tmp_chan);
+        if (B2_failed_count < FAILED_LIMIT) Broadcast_Channel_To(2, tmp_chan);
+        if (B3_failed_count < FAILED_LIMIT) Broadcast_Channel_To(3, tmp_chan);
+        if (B4_failed_count < FAILED_LIMIT) Broadcast_Channel_To(4, tmp_chan);
 
         // clean up ram after doing wifi channel scan
         WiFi.scanDelete();
         initWiFiManager();
     }
-
-    CheckButton();
-    IndicatorLED();
-    DisplayUpdate();
-    Channeling_Monitor();
 
     // Ping the server
     static unsigned long lastEventTime = millis();
@@ -721,9 +868,9 @@ void loop() {
     // Ping peers
     unsigned long currentMillis = millis();
     if (currentMillis - previousMillis >= interval) {
-        // Save the last time a new reading was published
-        previousMillis = currentMillis;        
-        
+        // Save the last scheduled ping
+        previousMillis = currentMillis;
+
         Serial.println("Scheduled ping");
         if (B1_failed_count < FAILED_LIMIT) SendTo(1);
         if (B2_failed_count < FAILED_LIMIT) SendTo(2);
