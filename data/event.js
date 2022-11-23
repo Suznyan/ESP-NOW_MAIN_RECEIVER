@@ -27,6 +27,7 @@ if (!!window.EventSource) {
         console.log("board3_new_reading", e.data);
         var obj3 = JSON.parse(e.data);
         document.getElementById("t" + obj3.id).innerHTML = obj3.temperature.toFixed(2);
+        document.getElementById("p" + obj3.id).innerHTML = obj3.pressure.toFixed(2);
         document.getElementById("r" + obj3.id).innerHTML = obj3.readingId;
         document.getElementById("state" + obj3.id).innerHTML = obj3.state;
     }, false);
@@ -75,8 +76,24 @@ function onLoad(event) {
 }
 
 function initButton() {
-    document.getElementById('button1').addEventListener('click', websocket.send('toggle1'));
-    document.getElementById('button2').addEventListener('click', websocket.send('toggle2'));
-    document.getElementById('button3').addEventListener('click', websocket.send('toggle3'));
-    document.getElementById('button4').addEventListener('click', websocket.send('toggle4'));
+    document.getElementById('button1').addEventListener('click', toggle1);
+    document.getElementById('button2').addEventListener('click', toggle2);
+    document.getElementById('button3').addEventListener('click', toggle3);
+    document.getElementById('button4').addEventListener('click', toggle4);
+}
+
+function toggle1() {
+    websocket.send('toggle1');
+}
+
+function toggle2() {
+    websocket.send('toggle2');
+}
+
+function toggle3() {
+    websocket.send('toggle3');
+}
+
+function toggle4() {
+    websocket.send('toggle4');
 }
