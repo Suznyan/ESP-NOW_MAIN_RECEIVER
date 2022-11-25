@@ -14,6 +14,13 @@ if (!!window.EventSource) {
         console.log("message", e.data);
     }, false);
 
+    source.addEventListener('b1new_readings', function (e) {
+        console.log("board1_new_readings", e.data);
+        var obj1 = JSON.parse(e.data);
+        document.getElementById("motion" + obj1.id).innerHTML = obj1.motion;
+        document.getElementById("state" + obj1.id).innerHTML = obj1.state;
+    }, false);
+
     source.addEventListener('b2new_readings', function (e) {
         console.log("board2_new_readings", e.data);
         var obj2 = JSON.parse(e.data);
@@ -34,8 +41,8 @@ if (!!window.EventSource) {
 
     source.addEventListener('new_device_state', function (e) {
         console.log("new_device_state", e.data);
-        var obj1 = JSON.parse(e.data);
-        document.getElementById("state" + obj1.id).innerHTML = obj1.state;
+        var obj4 = JSON.parse(e.data);
+        document.getElementById("state" + obj4.id).innerHTML = obj4.state;
     }, false);
 }
 

@@ -228,8 +228,11 @@ void OnDataRecv(const uint8_t *mac_addr, const uint8_t *incomingData, int len) {
         B1_failed_count = 0;
 
         memcpy(&Board1_Data, incomingData, sizeof(Board1_Data));
-        snprintf(str1, 20, "1.%s|", Board1_Data.status ? "ON" : "OFF");
+        snprintf(str1, 20, "1.%s|%s", Board1_Data.status ? "ON" : "OFF",
+                 Board1_Data.Motion_Detected ? "Detected" : "Not detected");
         Serial.printf("Board ID %u: %u bytes\n", Board1_Data.id, len);
+        Serial.println(Board1_Data.Motion_Detected ? "Motion: Detected"
+                                                   : "Motion: Not detected");
 
         if (Board1_Data.status != Board_1_Last_Received_State) {
             display.clearBuffer();
@@ -239,6 +242,8 @@ void OnDataRecv(const uint8_t *mac_addr, const uint8_t *incomingData, int len) {
 
         board1["id"] = 1;
         board1["state"] = Board1_Data.status ? "ON" : "OFF";
+        board1["motion"] =
+            Board1_Data.Motion_Detected ? "Detected" : "Not detected";
 
         String jsonString1 = JSON.stringify(board1);
         events.send(jsonString1.c_str(), "new_device_state", millis());
@@ -293,7 +298,6 @@ void OnDataRecv(const uint8_t *mac_addr, const uint8_t *incomingData, int len) {
         board3["temperature"] = (float)Board3_Data.temp / 100;
         board3["pressure"] = (float)Board3_Data.pres / 100;
         board3["readingId"] = String(Board3_Data.readingID);
-
         String jsonString3 = JSON.stringify(board3);
         events.send(jsonString3.c_str(), "b3new_reading", millis());
     }
@@ -313,7 +317,6 @@ void OnDataRecv(const uint8_t *mac_addr, const uint8_t *incomingData, int len) {
 
         board4["id"] = 4;
         board4["state"] = Board4_Data.status ? "ON" : "OFF";
-
         String jsonString4 = JSON.stringify(board4);
         events.send(jsonString4.c_str(), "new_device_state", millis());
     }
